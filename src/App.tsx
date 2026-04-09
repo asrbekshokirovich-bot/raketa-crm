@@ -13,7 +13,6 @@ import Logistics from './pages/Logistics';
 // New Pages
 import Stores from './pages/Stores';
 import AppManagement from './pages/AppManagement';
-import Employees from './pages/Employees';
 
 const Finance = () => <div className="p-8"><h1 className="text-2xl font-bold mb-4">Finance Portal</h1><p className="text-gray-600">Owner-only access module for tracking revenue and expenses.</p></div>;
 
@@ -47,11 +46,6 @@ const AppRoutes = () => {
           </ProtectedRoute>
         } />
         
-        <Route path="employees" element={
-          <ProtectedRoute requireOwner={true}>
-            <Employees />
-          </ProtectedRoute>
-        } />
         
         {/* Protected Finance Route */}
         <Route path="finance" element={

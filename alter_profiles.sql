@@ -1,1 +1,2 @@
-ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS store_id UUID REFERENCES public.stores(id) ON DELETE SET NULL;
+-- Add phone number to profiles
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS phone TEXT;

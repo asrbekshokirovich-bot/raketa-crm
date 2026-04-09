@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
-import { supabaseAdmin } from '../services/supabaseAdmin';
 import { Plus, Store, MapPin, Phone, User as UserIcon, Loader2, Edit2, Trash2, XCircle, CheckCircle2, Image as ImageIcon, Map, Clock, ArrowRight } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
@@ -46,10 +45,7 @@ const Stores = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingStore, setEditingStore] = useState<StoreType | null>(null);
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
-  
-  const [managersList, setManagersList] = useState<any[]>([]);
-  const [selectedManagerId, setSelectedManagerId] = useState('');
-  
+  const [storeToDelete, setStoreToDelete] = useState<string | null>(null);
   const isOwner = user?.role === 'Owner';
   const isManager = user?.role === 'Manager';
   const isSotuvchiYokiOmborchi = user?.role === 'Omborchi' || user?.role === 'Sotuvchi';
@@ -57,8 +53,6 @@ const Stores = () => {
   // Form State
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
-  const [managerName, setManagerName] = useState('');
-  const [managerPhone, setManagerPhone] = useState('');
   const [status, setStatus] = useState<'Active' | 'Inactive' | '24/7'>('Active');
   const [location, setLocation] = useState('');
   const [mapPosition, setMapPosition] = useState<L.LatLng | null>(null);
@@ -70,18 +64,9 @@ const Stores = () => {
 
   useEffect(() => {
     fetchStores();
-    fetchManagers();
   }, []);
 
-  const fetchManagers = async () => {
-    try {
-      const { data, error } = await supabase.from('profiles').select('id, full_name').eq('role', 'Manager');
-      if (error) console.error('Error loading managers:', error);
-      if (data) setManagersList(data);
-    } catch (err) {
-      console.error('Error fetching managers:', err);
-    }
-  };
+-
 
   // Sync map click with location text
   useEffect(() => {
@@ -110,8 +95,6 @@ const Stores = () => {
   const resetForm = () => {
     setName('');
     setAddress('');
-    setManagerName('');
-    setManagerPhone('');
     setStatus('Active');
     setLocation('');
     setMapPosition(null);
@@ -122,7 +105,6 @@ const Stores = () => {
 
   const handleOpenAdd = () => {
     resetForm();
-    setSelectedManagerId('');
     // Default to Tashkent coordinates on open add
     setMapPosition(new L.LatLng(41.311081, 69.240562));
     setIsModalOpen(true);
@@ -132,14 +114,7 @@ const Stores = () => {
     setEditingStore(store);
     setName(store.name);
     setAddress(store.address);
-    setManagerName(store.manager_name);
-    
-    // Auto-select manager
-    const mgr = managersList.find(m => m.full_name === store.manager_name);
-    if (mgr) setSelectedManagerId(mgr.id);
-    else setSelectedManagerId('');
 
-    setManagerPhone(store.manager_phone);
     setStatus(store.status);
     setLocation(store.location || '');
     
@@ -162,7 +137,7 @@ const Stores = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !address.trim() || !managerName.trim() || !managerPhone.trim()) return;
+    if (!name.trim() || !address.trim()) return;
     
     setIsSubmitting(true);
     try {
@@ -189,14 +164,12 @@ const Stores = () => {
       const storeData = {
         name, 
         address, 
-        manager_name: managerName, 
-        manager_phone: managerPhone, 
         status,
         location: location.trim() || null,
-        image_url: finalImageUrl
+        image_url: finalImageUrl,
+        manager_name: "Biriktirilmagan",
+        manager_phone: ""
       };
-
-      let currentStoreId = editingStore ? editingStore.id : null;
 
       if (editingStore) {
         const { error } = await supabase
@@ -205,44 +178,40 @@ const Stores = () => {
           .eq('id', editingStore.id);
         if (error) throw error;
       } else {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from('stores')
           .insert([storeData])
           .select()
           .single();
         if (error) throw error;
-        currentStoreId = data.id;
       }
       
-      // Automatically assign the store to the selected manager's profile using Admin API
-      // Since it's done by Owner, they should have permission via the function or supabaseAdmin
-      if (selectedManagerId && currentStoreId) {
-        const { error: profileError } = await supabaseAdmin
-          .from('profiles')
-          .update({ store_id: currentStoreId })
-          .eq('id', selectedManagerId);
-          
-        if (profileError) console.error("Could not link manager profile to store:", profileError.message);
-      }
+      // (Manager assignment is handled independently now via Admins.tsx)
       
       setIsModalOpen(false);
       fetchStores();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error saving store:', err);
+      alert("Do'konni saqlashda xatolik yuz berdi:\n" + (err.message || JSON.stringify(err)));
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm("Rostdan ham ushbu do'konni tizimdan o'chirmoqchimisiz? Ushbu do'konga tegishli buyurtmalar xarolasiga tushishi mumkin.")) return;
-    
+  const handleDelete = (id: string) => {
+    setStoreToDelete(id);
+  };
+
+  const confirmDelete = async () => {
+    if (!storeToDelete) return;
     try {
-      const { error } = await supabase.from('stores').delete().eq('id', id);
+      const { error } = await supabase.from('stores').delete().eq('id', storeToDelete);
       if (error) throw error;
+      setStoreToDelete(null);
       fetchStores();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting store:', err);
+      alert("O'chirishda xatolik yuz berdi:\n" + (err.message || JSON.stringify(err)));
     }
   };
 
@@ -341,14 +310,24 @@ const Stores = () => {
                     )}
                   </div>
                 )}
-                <div className="flex items-center gap-2.5">
-                  <UserIcon size={16} className="text-slate-400 shrink-0" />
-                  <span className="text-sm text-slate-700 font-bold">{store.manager_name}</span>
-                </div>
-                <div className="flex items-center gap-2.5">
-                  <Phone size={16} className="text-slate-400 shrink-0" />
-                  <span className="text-sm text-slate-600 font-medium">{store.manager_phone}</span>
-                </div>
+                {store.manager_name ? (
+                  <>
+                    <div className="flex items-center gap-2.5">
+                      <UserIcon size={16} className="text-slate-400 shrink-0" />
+                      <span className="text-sm text-slate-700 font-bold">{store.manager_name}</span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <Phone size={16} className="text-slate-400 shrink-0" />
+                      <span className="text-sm text-slate-600 font-medium">{store.manager_phone}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2.5 p-2 bg-red-50 rounded-lg border border-red-100">
+                    <UserIcon size={16} className="text-red-400 shrink-0" />
+                    <span className="text-xs text-red-600 font-bold">Menejer biriktirilmagan</span>
+                  </div>
+                )}
+
               </div>
 
               {!isSotuvchiYokiOmborchi && (
@@ -493,43 +472,15 @@ const Stores = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="manager-select" className="block text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-1.5 ml-1">Menejer Ismi</label>
-                    <select
-                      id="manager-select"
-                      title="Menejer Ismi"
-                      aria-label="Menejer Ismi"
-                      value={selectedManagerId}
-                      required
-                      onChange={e => {
-                        const val = e.target.value;
-                        setSelectedManagerId(val);
-                        if (val) {
-                          const mgr = managersList.find(m => m.id === val);
-                          if (mgr) setManagerName(mgr.full_name);
-                        } else {
-                          setManagerName('');
-                        }
-                      }}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-mustard/30 focus:border-mustard outline-none transition-all font-bold text-sm bg-slate-50 focus:bg-white appearance-none"
-                    >
-                      <option value="" disabled>Ro'yxatdan menejerni tanlang...</option>
-                      {managersList.map(mgr => (
-                        <option key={mgr.id} value={mgr.id}>{mgr.full_name}</option>
-                      ))}
-                    </select>
+                <div className="bg-blue-50/70 border border-blue-100 p-4 rounded-[20px] flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-2xl bg-white border border-blue-100 text-blue-500 shadow-sm flex items-center justify-center shrink-0 mt-0.5">
+                    <UserIcon size={20} strokeWidth={2.5} />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-1.5 ml-1">Telefon Raqami (Menejer)</label>
-                    <input
-                      type="text"
-                      required
-                      value={managerPhone}
-                      onChange={e => setManagerPhone(e.target.value)}
-                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-mustard/30 focus:border-mustard outline-none transition-all font-bold text-sm bg-slate-50 focus:bg-white tracking-widest"
-                      placeholder="+998 90 123 45 67"
-                    />
+                    <h4 className="text-[12px] font-black text-blue-900 uppercase tracking-widest mb-1">Menejer biriktirish</h4>
+                    <p className="text-xs text-blue-800/80 font-bold leading-relaxed">
+                      Do'kon tizimga qo'shilganidan so'ng, ushbu filial uchun menejerni "<b>Xodimlar</b>" bo'limiga o'tib tayinlashingiz mumkin. Bu oynada ma'lumot kiritilmaydi.
+                    </p>
                   </div>
                 </div>
 
@@ -583,6 +534,35 @@ const Stores = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {storeToDelete && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl relative animate-in zoom-in-95 duration-200">
+            <div className="w-12 h-12 rounded-full bg-red-100 text-red-500 flex items-center justify-center mb-4 mx-auto">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-xl font-bold text-center text-slate-800 mb-2">Do'konni o'chirish</h3>
+            <p className="text-sm text-center text-slate-500 mb-6 px-4">
+              Rostdan ham ushbu do'konni tizimdan o'chirmoqchimisiz? Ushbu do'konga tegishli buyurtmalar xarolasiga tushishi mumkin.
+            </p>
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setStoreToDelete(null)}
+                className="flex-1 py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+              >
+                Bekor qilish
+              </button>
+              <button 
+                onClick={confirmDelete}
+                className="flex-1 py-3 px-4 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl transition-colors shadow-sm shadow-red-500/20"
+              >
+                O'chirish
+              </button>
             </div>
           </div>
         </div>

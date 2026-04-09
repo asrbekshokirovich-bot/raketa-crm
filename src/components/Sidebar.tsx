@@ -10,7 +10,6 @@ import {
   ListChecks, 
   Store,
   Smartphone,
-  UserCog
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -25,7 +24,6 @@ const Sidebar = () => {
     { name: 'Yetkazib Berish', path: '/logistics', icon: <Truck size={20} /> },
     { name: "Do'konlar", path: '/stores', icon: <Store size={20} /> },
     { name: "Ilova boshqaruvi", path: '/app-management', icon: <Smartphone size={20} /> },
-    { name: "Xodimlar", path: '/employees', icon: <UserCog size={20} /> },
   ];
 
   if (user?.role === 'Omborchi' || user?.role === 'Sotuvchi') {
@@ -42,7 +40,7 @@ const Sidebar = () => {
     // Insert Finance right after Dashboard (index 1)
     navItems.splice(1, 0, { name: 'Finance', path: '/finance', icon: <Wallet size={20} /> });
     // Push Admins to the very bottom
-    navItems.push({ name: 'Admins', path: '/admins', icon: <Users size={20} /> });
+    navItems.push({ name: 'Xodimlar', path: '/admins', icon: <Users size={20} /> });
   }
 
   return (

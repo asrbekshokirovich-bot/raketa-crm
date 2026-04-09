@@ -14,7 +14,18 @@ import {
   Trash2,
   XCircle,
   ChevronDown,
-  Info
+  Info,
+  Apple,
+  Coffee,
+  Croissant,
+  Beef,
+  FlaskConical,
+  Milk,
+  Sparkles,
+  Sprout,
+  Baby,
+  Dog,
+  Candy
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -48,7 +59,10 @@ const Inventory = () => {
   const [copiedSku, setCopiedSku] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSkuDropdownOpen, setIsSkuDropdownOpen] = useState(false);
-  const [infoModalData, setInfoModalData] = useState<{name: string, storeName: string, creatorName: string} | null>(null);
+  const [infoModalData, setInfoModalData] = useState<{name: string, sku: string, creatorName: string} | null>(null);
+  
+  const [scannerErrorGlow, setScannerErrorGlow] = useState(false);
+  const [skuInputMode, setSkuInputMode] = useState<'scanner' | 'manual'>('scanner');
 
   const [newProduct, setNewProduct] = useState({
     name: '',
@@ -125,17 +139,105 @@ const Inventory = () => {
     fetchInventory();
   }, []);
 
+  const processSkuSelection = (scannedCode: string) => {
+    const globalRecords = items.filter(i => i.sku === scannedCode);
+
+    if (globalRecords.length > 0) {
+       // It exists somewhere globally! Route safely to 'existing' pane.
+       setReceiveMode('existing');
+       setSelectedSku(scannedCode);
+    } else {
+       // Completely new SKU globally
+       setReceiveMode('new');
+       setNewProduct({
+         name: '',
+         sku: scannedCode,
+         category: 'Oziq-ovqat',
+         unit: 'dona',
+         minStock: 10
+       });
+    }
+  };
+
+  // Global Barcode Scanner Listener
+  useEffect(() => {
+    if (!isModalOpen) return;
+
+    let barcodeBuffer = '';
+    let lastKeyTime = Date.now();
+    let firstKeyTime = Date.now();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore functional keys
+      if (e.key === 'Escape' || e.key === 'Tab') return;
+
+      const currentTime = Date.now();
+      
+      // Reset buffer if typing normally (>100ms per keystroke)
+      if (currentTime - lastKeyTime > 100) {
+        barcodeBuffer = '';
+        firstKeyTime = currentTime;
+      }
+      lastKeyTime = currentTime;
+
+      // Track typing
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        barcodeBuffer += e.key;
+        // DO NOT preventDefault here. Let characters enter normally.
+      } else if (e.key === 'Enter' && barcodeBuffer.length >= 4) {
+        
+        // Check if the sequence was incredibly fast (scanner speed)
+        const totalDuration = currentTime - firstKeyTime;
+        if (totalDuration < 1000) { // 13 chars in 1 second is very fast
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const scannedCode = barcodeBuffer;
+          barcodeBuffer = '';
+
+          // REMOVE visually leaked scanner characters from focused inputs safely in React
+          const activeEl = document.activeElement;
+          setTimeout(() => {
+            const isInput = activeEl instanceof HTMLInputElement && activeEl.id !== 'sku-input' && activeEl.type !== 'radio' && activeEl.type !== 'checkbox';
+            const isTextArea = activeEl instanceof HTMLTextAreaElement;
+
+            if (isInput || isTextArea) {
+              const el = activeEl as HTMLInputElement | HTMLTextAreaElement;
+              const prototype = isInput ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
+              const nativeSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+              
+              if (nativeSetter) {
+                if (el.value.endsWith(scannedCode)) {
+                  nativeSetter.call(el, el.value.slice(0, -scannedCode.length));
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                } else if (el.value === scannedCode) {
+                  nativeSetter.call(el, '');
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+              }
+            }
+          }, 50);
+
+          if (skuInputMode === 'manual') {
+            setScannerErrorGlow(true);
+            setTimeout(() => setScannerErrorGlow(false), 900);
+            alert("Skanerdan foydalanish uchun, iltimos yuqoridagi 'Avtomat Skaner' rejimini tanlang!");
+            return;
+          }
+
+          processSkuSelection(scannedCode);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isModalOpen, receiveMode]);
+
   const handleCopy = (sku: string) => {
     navigator.clipboard.writeText(sku);
     setCopiedSku(sku);
     setTimeout(() => setCopiedSku(null), 2000);
-  };
-  
-  const generateRandomId = (category: string) => {
-    const prefix = (category || 'GEN').substring(0, 3).toUpperCase().replace(/[^A-Z]/g, 'X');
-    const digits = Math.floor(10000 + Math.random() * 90000).toString();
-    const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26)); 
-    return `${prefix}-${digits}${letter}`;
   };
 
   const calculateTotal = () => {
@@ -149,8 +251,33 @@ const Inventory = () => {
     
     try {
       if (receiveMode === 'existing') {
-        const item = items.find(i => i.sku === selectedSku);
-        if (!item) return;
+        const item = items.find(i => i.sku === selectedSku && (activeStore === 'ALL' ? true : i.store_id === activeStore));
+        
+        if (!item) {
+           // We do not have it locally, but it exists in the 'existing' pane so it MUST be global.
+           const globalItem = items.find(i => i.sku === selectedSku);
+           if (!globalItem) return;
+
+           const { error } = await supabase
+             .from('products')
+             .insert([{
+                sku: globalItem.sku,
+                name: globalItem.name,
+                category: globalItem.category,
+                unit: globalItem.unit,
+                min_stock: globalItem.minStock,
+                stock: Number(quantity) || 0, // Safe default since we allow incremental additions
+                price: Number(pricePerUnit) || globalItem.price,
+                last_updated: new Date().toISOString(),
+                store_id: activeStore === 'ALL' ? null : activeStore,
+                created_by: user?.id
+             }]);
+
+           if (error) throw error;
+           await fetchInventory();
+           handleCloseModal();
+           return;
+        }
 
         const updateData: any = {
           last_updated: new Date().toISOString()
@@ -176,10 +303,18 @@ const Inventory = () => {
 
         // Only update if there are changes (beyond just last_updated)
         if (Object.keys(updateData).length > 1) {
-          const { error } = await supabase
+          let query = supabase
             .from('products')
             .update(updateData)
             .eq('sku', selectedSku);
+
+          if (item.store_id) {
+             query = query.eq('store_id', item.store_id);
+          } else if (activeStore !== 'ALL') {
+             query = query.eq('store_id', activeStore);
+          }
+
+          const { error } = await query;
 
           if (error) throw error;
         }
@@ -217,11 +352,15 @@ const Inventory = () => {
           return;
         }
 
-        const randomID = generateRandomId(newProduct.category);
+        if (!newProduct.sku || newProduct.sku.trim() === '') {
+          showError("Iltimos, shtrix kodni (SKU) kiriting!");
+          return;
+        }
+
         const { error } = await supabase
           .from('products')
           .insert([{
-            sku: randomID,
+            sku: newProduct.sku.trim(),
             name: newProduct.name,
             category: newProduct.category,
             stock: Number(quantity) || 0,
@@ -299,7 +438,20 @@ const Inventory = () => {
     .filter(item => 
       item.sku.toLowerCase().includes(searchQuery.toLowerCase()) || 
       item.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    )
+    .reduce((acc, current) => {
+      const existing = acc.find(i => i.sku === current.sku);
+      if (existing) {
+        existing.inStock += current.inStock;
+        // Keep the latest timestamp
+        // It's pre-formatted to Uzbek locale, but basic string comparision works or we can just leave it as it usually matches.
+        // For safety, let's just leave the most recently updated item's values (which we already sorted by in DB)
+        // Since we sort by last_updated DESC in the DB, the first `existing` we push is already the most recent!
+      } else {
+        acc.push({ ...current });
+      }
+      return acc;
+    }, [] as any[]);
 
   return (
     <div className="space-y-6">
@@ -454,10 +606,29 @@ const Inventory = () => {
                               item.category === 'Oziq-ovqat' ? 'bg-orange-50 border-orange-100 text-orange-500' : 
                               item.category === 'Sut mahsulotlari' ? 'bg-cyan-50 border-cyan-100 text-cyan-600' : 
                               item.category === 'Poliz mahsulotlari' ? 'bg-yellow-50 border-yellow-100 text-yellow-600' : 
-                              item.category === 'O\'quv qurollari' ? 'bg-purple-50 border-purple-100 text-purple-500' : 
+                              item.category === 'Shirinliklar' ? 'bg-pink-50 border-pink-100 text-pink-500' :
+                              item.category === 'Mevalar' ? 'bg-green-50 border-green-100 text-green-500' :
+                              item.category === 'Sabzavotlar' ? 'bg-emerald-50 border-emerald-100 text-emerald-500' :
+                              item.category === 'Go\'sht' ? 'bg-red-50 border-red-100 text-red-500' :
+                              item.category === 'Non va un' ? 'bg-amber-50 border-amber-100 text-amber-600' :
+                              item.category === 'Bolalar oziq-ovqati' ? 'bg-indigo-50 border-indigo-100 text-indigo-500' :
+                              item.category === 'Go\'zallik' ? 'bg-rose-50 border-rose-100 text-rose-500' :
+                              item.category === 'Uy hayvonlari' ? 'bg-violet-50 border-violet-100 text-violet-500' :
                               item.category === 'Maishiy kimyo' ? 'bg-teal-50 border-teal-100 text-teal-500' : 
                               'bg-slate-50 border-slate-100 text-slate-400'}`}>
-                            <Package size={20} />
+                            {item.category === 'Ichimliklar' ? <Coffee size={20} /> :
+                             item.category === 'Oziq-ovqat' ? <Package size={20} /> :
+                             item.category === 'Sut mahsulotlari' ? <Milk size={20} /> :
+                             item.category === 'Shirinliklar' ? <Candy size={20} /> :
+                             item.category === 'Mevalar' ? <Apple size={20} /> :
+                             item.category === 'Sabzavotlar' ? <Sprout size={20} /> :
+                             item.category === 'Go\'sht' ? <Beef size={20} /> :
+                             item.category === 'Non va un' ? <Croissant size={20} /> :
+                             item.category === 'Bolalar oziq-ovqati' ? <Baby size={20} /> :
+                             item.category === 'Go\'zallik' ? <Sparkles size={20} /> :
+                             item.category === 'Uy hayvonlari' ? <Dog size={20} /> :
+                             item.category === 'Maishiy kimyo' ? <FlaskConical size={20} /> :
+                             <Package size={20} />}
                           </div>
                           <div>
                             <div className="flex items-center gap-2 mb-1">
@@ -470,6 +641,7 @@ const Inventory = () => {
                             </div>
                             <div className="flex items-center gap-2 group">
                               <span className="text-[11px] font-mono font-black text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-100 flex items-center gap-2 shadow-sm transition-all group-hover:border-slate-200 group-hover:bg-white">
+                                <span className="text-slate-400 font-normal tracking-normal mr-0.5">SKU/Barcode:</span>
                                 {item.sku}
                                 <button 
                                   onClick={() => handleCopy(item.sku)}
@@ -541,7 +713,7 @@ const Inventory = () => {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              setInfoModalData({ name: item.name, storeName: item.storeName || '', creatorName: item.creatorName || ''});
+                              setInfoModalData({ name: item.name, sku: item.sku, creatorName: item.creatorName || ''});
                             }}
                             className="text-slate-400 hover:text-blue-500 p-2 rounded-lg hover:bg-blue-50 transition-all"
                             title="Ma'lumot"
@@ -616,6 +788,56 @@ const Inventory = () => {
                   <div className="space-y-4">
 
                     <div className="grid grid-cols-2 gap-4">
+                      
+                      <div className="col-span-2">
+                        <div className="flex justify-between items-end mb-1.5 ml-1">
+                          <label className="block text-sm font-bold text-slate-700">Shtrix kod</label>
+                          <div className="flex gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => setSkuInputMode('scanner')}
+                              className={`px-3 py-1 rounded-md text-[10px] uppercase font-bold transition-all ${skuInputMode === 'scanner' ? 'bg-white text-brandRed shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                              Avtomat Skaner
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSkuInputMode('manual')}
+                              className={`px-3 py-1 rounded-md text-[10px] uppercase font-bold transition-all ${skuInputMode === 'manual' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                              Tahrirlash
+                            </button>
+                          </div>
+                        </div>
+                        <div className="relative">
+                          <input 
+                            id="sku-input"
+                            title={skuInputMode === 'scanner' ? "Faqat o'qigich orqali" : "Shtrix kodni yozing..."}
+                            type="text" 
+                            required
+                            readOnly={skuInputMode === 'scanner'}
+                            autoFocus={skuInputMode === 'scanner'}
+                            className={`w-full px-4 py-3 rounded-2xl border focus:outline-none focus:ring-2 focus:ring-sidebarDark/10 transition-all font-mono font-bold text-lg tracking-widest ${scannerErrorGlow ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)] bg-red-50 text-red-600' : 'border-gray-200 text-slate-700 bg-white'}`}
+                            placeholder={skuInputMode === 'scanner' ? "0000000000000" : "Shtrix kod raqamini kiriting..."}
+                            value={newProduct.sku}
+                            onChange={(e) => skuInputMode === 'manual' && setNewProduct({...newProduct, sku: e.target.value})}
+                          />
+                          {newProduct.sku && (
+                            <button
+                              type="button"
+                              onClick={() => setNewProduct({...newProduct, sku: ''})}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 p-1.5 rounded-xl hover:bg-red-50 bg-white shadow-sm border border-slate-200 transition-all font-bold"
+                              title="Shtrix kodni tozalash"
+                            >
+                              <XCircle size={18} />
+                            </button>
+                          )}
+                        </div>
+                        <p className="text-[10px] font-bold text-slate-400 mt-1.5 ml-1.5 uppercase tracking-wider">
+                          Skanerdan foydalanish uchun 'Avtomat skaner'ni tanlang
+                        </p>
+                      </div>
+
                       <div className="col-span-2">
                         <label className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">Mahsulot nomi</label>
                         <input 
@@ -638,10 +860,16 @@ const Inventory = () => {
                         >
                           <option>Oziq-ovqat</option>
                           <option>Ichimliklar</option>
+                          <option>Shirinliklar</option>
+                          <option>Mevalar</option>
+                          <option>Sabzavotlar</option>
+                          <option>Go'sht</option>
                           <option>Sut mahsulotlari</option>
-                          <option>Poliz mahsulotlari</option>
-                          <option>O'quv qurollari</option>
+                          <option>Non va un</option>
                           <option>Maishiy kimyo</option>
+                          <option>Bolalar oziq-ovqati</option>
+                          <option>Go'zallik</option>
+                          <option>Uy hayvonlari</option>
                           <option>Boshqalar</option>
                         </select>
                       </div>
@@ -691,8 +919,8 @@ const Inventory = () => {
                             </li>
                             {items.map(item => (
                               <li
-                                key={item.sku}
-                                onClick={() => { setSelectedSku(item.sku); setIsSkuDropdownOpen(false); }}
+                                key={item.id}
+                                onClick={() => { processSkuSelection(item.sku); setIsSkuDropdownOpen(false); }}
                                 className={`px-4 py-3 hover:bg-slate-50 cursor-pointer text-sm font-bold border-b border-slate-50 transition-colors ${selectedSku === item.sku ? 'bg-sidebarDark/5 text-sidebarDark border-l-4 border-l-sidebarDark pl-3' : 'text-slate-700'}`}
                               >
                                 {item.sku} - {item.name}
@@ -706,20 +934,69 @@ const Inventory = () => {
                 )}
 
                 {receiveMode === 'existing' && selectedSku && (() => {
-                  const item = items.find(i => i.sku === selectedSku);
-                  if (!item) return null;
+                  let item = items.find(i => i.sku === selectedSku && (activeStore === 'ALL' ? true : i.store_id === activeStore));
+                  const globalFallback = items.find(i => i.sku === selectedSku);
+                  
+                  if (!item && !globalFallback) return null;
+                  
+                  const displayItem = item || globalFallback!;
+
+                  // Active store name lookup
+                  const activeStoreName = activeStore === 'ALL' 
+                    ? 'Barcha filiallar' 
+                    : (items.find(i => i.store_id === activeStore)?.storeName || 'Sizdagi filial');
+
+                  // Filter out activeStore to show other stores
+                  const otherStores = items.filter(i => i.sku === selectedSku && i.store_id !== activeStore && i.inStock > 0);
+
                   return (
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 mb-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Erkin Qoldiq (Ombor)</span>
-                        <div className="flex items-baseline gap-1">
-                           <span className="text-xl font-black text-sidebarDark">{item.inStock}</span>
-                           <span className="text-xs font-bold text-slate-400 tracking-wider uppercase">{item.unit}</span>
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 mb-3 flex flex-col gap-3">
+                      
+                      {/* Boshqa omborlarda mavjud qoldiqlar */}
+                      {otherStores.length > 0 && (
+                        <div className="border-b border-slate-200/60 pb-3 mb-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block ml-1">Qaysi do'konlarda mavjud?</span>
+                          <div className="flex flex-col gap-2">
+                            {otherStores.map((storeRec, idx) => (
+                              <div key={idx} className="flex justify-between items-center bg-white px-3 py-2.5 rounded-xl border border-slate-200/60 shadow-sm">
+                                <span className="text-sm font-bold text-slate-600 flex items-center gap-2">
+                                  <div className="p-1 rounded-md bg-slate-50"><Box size={14} className="text-slate-400"/></div>
+                                  {storeRec.storeName}
+                                </span>
+                                <span className="text-sm font-black text-blue-700 bg-blue-50/50 px-2.5 py-1 rounded-lg">
+                                  {storeRec.inStock} <span className="text-[10px] font-bold uppercase">{storeRec.unit}</span>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Oxirgi yangilanish</span>
-                        <span className="text-sm font-bold text-slate-700">{new Date(item.lastUpdated).toLocaleString('uz-UZ').replace(',', '')}</span>
+                      )}
+
+                      {/* Joriy xodimning filiali va uning qoldig'i */}
+                      <div className="flex justify-between items-center bg-blue-50 p-3 rounded-xl border border-blue-100/60">
+                        <div className="flex flex-col">
+                          <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1.5 ml-1">
+                            Sizning o'zgarishingiz:
+                          </span>
+                          <span className="text-sm font-bold text-slate-700 ml-1">
+                            {activeStoreName} ({activeStore === 'ALL' ? 'Admin' : user?.fullName || 'Xodim'})
+                          </span>
+                          {item && (
+                            <span className="text-[10px] font-bold text-slate-400 ml-1 mt-1">
+                              Oxirgi yangilanuv: {new Date(item.lastUpdated).toLocaleString('uz-UZ').replace(',', '')}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-col items-end">
+                           {!item ? (
+                             <span className="text-[11px] font-black text-green-600 bg-green-100/50 px-2.5 py-1.5 rounded-lg border border-green-200">MAHSULOT KIRITISH (YANGI)</span>
+                           ) : (
+                             <div className="flex items-baseline gap-1 bg-white px-3 py-1.5 rounded-xl border border-blue-100 shadow-sm">
+                               <span className="text-xl font-black text-sidebarDark">{item.inStock}</span>
+                               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{displayItem.unit}</span>
+                             </div>
+                           )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -889,9 +1166,27 @@ const Inventory = () => {
                 </div>
               </div>
               <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-1.5">Qaysi filialga tegishli?</p>
-                <div className="font-black text-blue-600 border border-blue-100 bg-blue-50 p-3.5 rounded-2xl flex items-center gap-2">
-                  <Box size={18} /> {infoModalData.storeName}
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-1.5">Qaysi do'konlarda mavjud?</p>
+                <div className="font-bold text-blue-600 border border-blue-100 bg-blue-50 p-3.5 rounded-2xl flex flex-col gap-2">
+                  {items.filter(i => i.sku === infoModalData.sku && i.inStock > 0).length > 0 ? (
+                    items.filter(i => i.sku === infoModalData.sku && i.inStock > 0).map((storeRecord, index) => (
+                      <div key={index} className="flex flex-col gap-1 bg-white p-3 rounded-xl border border-blue-200 shadow-sm">
+                        <div className="flex justify-between items-center">
+                          <span className="flex items-center gap-1.5 text-sm text-blue-700">
+                            <Box size={14} /> {storeRecord.storeName}
+                          </span>
+                          <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md">
+                            {storeRecord.inStock} {storeRecord.unit}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 ml-5 font-semibold">
+                          <span>Qo'shgan:</span> <span className="text-slate-700">{storeRecord.creatorName}</span>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <span className="text-slate-500 font-medium">Hozircha hech qaysi omborda mavjud emas</span>
+                  )}
                 </div>
               </div>
               <div>

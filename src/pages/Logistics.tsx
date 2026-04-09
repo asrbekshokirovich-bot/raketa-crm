@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../services/supabase';
 import { 
   Truck, 
   Search, 
@@ -25,37 +26,47 @@ interface DeliveryOrder {
 
 const Logistics = () => {
   const [activeTab, setActiveTab] = useState<'Waiting' | 'InTransit' | 'Finished'>('Waiting');
-  const [deliveries] = useState<DeliveryOrder[]>([
-    {
-      id: '1',
-      orderNumber: '#RK-9082',
-      customerName: 'Abulfayz Karimov',
-      status: 'Waiting',
-      address: 'Toshkent sh., Chilonzor 5-mavze',
-      time: 'Yig\'ilgan: 11:20',
-      amount: '450,000 UZS'
-    },
-    {
-      id: '2',
-      orderNumber: '#RK-9080',
-      customerName: 'Laziz Bekmirzoev',
-      courierName: 'Doniyor kuryer',
-      status: 'OnTheWay',
-      address: 'Sergeli 8-daha, 12-uy',
-      time: 'Chiqib ketgan: 10:45',
-      amount: '890,000 UZS'
-    },
-    {
-      id: '3',
-      orderNumber: '#RK-9075',
-      customerName: 'Umida G\'anieva',
-      courierName: 'Jasur kuryer',
-      status: 'Delivered',
-      address: 'Olmazor tumani, Qoraqamish',
-      time: 'Yetkazildi: 09:30',
-      amount: '120,000 UZS'
+  const [deliveries, setDeliveries] = useState<DeliveryOrder[]>([]);
+
+  useEffect(() => {
+    fetchDeliveries();
+
+    const channel = supabase
+      .channel('deliveries-channel')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        () => {
+          fetchDeliveries();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const fetchDeliveries = async () => {
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .in('status', ['Waiting', 'OnTheWay', 'Delivered', 'Returned'])
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      const formatted = data.map(o => ({
+        id: o.id,
+        orderNumber: o.order_number,
+        customerName: o.customer_name,
+        amount: o.total_amount,
+        status: o.status,
+        address: o.address,
+        time: new Date(o.created_at).toLocaleTimeString('uz-UZ', {hour: '2-digit', minute:'2-digit'})
+      }));
+      setDeliveries(formatted as DeliveryOrder[]);
     }
-  ]);
+  };
 
   const stats = {
     waiting: deliveries.filter(d => d.status === 'Waiting').length,

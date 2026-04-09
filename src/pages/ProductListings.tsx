@@ -445,6 +445,85 @@ const ProductListings = () => {
     fetchListings();
   }, [activeStore]);
 
+  const [scannerErrorGlow, setScannerErrorGlow] = useState(false);
+  const [skuInputMode, setSkuInputMode] = useState<'scanner' | 'manual'>('scanner');
+
+  // Global Barcode Scanner Listener
+  useEffect(() => {
+    if (!isModalOpen) return;
+
+    let barcodeBuffer = '';
+    let lastKeyTime = Date.now();
+    let firstKeyTime = Date.now();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore functional keys
+      if (e.key === 'Escape' || e.key === 'Tab') return;
+
+      const currentTime = Date.now();
+      if (currentTime - lastKeyTime > 100) {
+        barcodeBuffer = '';
+        firstKeyTime = currentTime;
+      }
+      lastKeyTime = currentTime;
+
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        barcodeBuffer += e.key;
+      } else if (e.key === 'Enter' && barcodeBuffer.length >= 4) {
+        const totalDuration = currentTime - firstKeyTime;
+        if (totalDuration < 1000) {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          const scannedCode = barcodeBuffer;
+          barcodeBuffer = '';
+
+          // REMOVE visually leaked scanner characters from focused inputs safely in React
+          const activeEl = document.activeElement;
+          setTimeout(() => {
+            const isInput = activeEl instanceof HTMLInputElement && activeEl.id !== 'sku-input' && activeEl.type !== 'radio' && activeEl.type !== 'checkbox';
+            const isTextArea = activeEl instanceof HTMLTextAreaElement;
+
+            if (isInput || isTextArea) {
+              const el = activeEl as HTMLInputElement | HTMLTextAreaElement;
+              const prototype = isInput ? window.HTMLInputElement.prototype : window.HTMLTextAreaElement.prototype;
+              const nativeSetter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+              
+              if (nativeSetter) {
+                if (el.value.endsWith(scannedCode)) {
+                  nativeSetter.call(el, el.value.slice(0, -scannedCode.length));
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                } else if (el.value === scannedCode) {
+                  nativeSetter.call(el, '');
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+              }
+            }
+          }, 50);
+
+          if (skuInputMode === 'manual') {
+            showError(`Skanerdan foydalanish uchun, iltimos yuqoridagi "SKANER" rejimiga o'tkazing!`, 'warning');
+            return;
+          }
+
+          setSku(prevSku => {
+             if (prevSku && prevSku !== scannedCode) {
+               setScannerErrorGlow(true);
+               setTimeout(() => setScannerErrorGlow(false), 600);
+               return prevSku;
+             }
+             
+             setTimeout(() => handleScannerInput(scannedCode), 0);
+             return scannedCode;
+          });
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [isModalOpen]);
+
   const handleDeleteListing = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setDeleteConfirmId(id);
@@ -502,11 +581,10 @@ const ProductListings = () => {
     }
   };
 
-  const handleSkuChange = async (val: string) => {
-    setSku(val);
-    const upperVal = val.toUpperCase();
-
-    // Clear dependent fields as soon as SKU is modified
+  const handleScannerInput = async (scannedCode: string) => {
+    const upperVal = scannedCode.toUpperCase();
+    
+    // Clear dependent fields
     setName('');
     setCategory('Hali tanlanmagan');
     setPrice('');
@@ -517,40 +595,40 @@ const ProductListings = () => {
     setIsDiscountConfirmed(false);
     setIsErrorVisible(false);
 
-    // Duplicate SKU Warning Focus
+    // Duplicate Check
     const existingListing = listings.find(l => l.sku === upperVal);
     if (existingListing) {
-      showError(`Bunday SKU (${upperVal}) bilan tovar allaqachon savdoga qo'yilgan!`, 'warning');
+      showError(`Bunday shtrix kod (${upperVal}) bilan tovar allaqachon savdoga qo'yilgan!`, 'warning');
+      return;
     }
 
-    if (val.length === 10) {
-      setIsLoading(true);
-      try {
-        let query = supabase
-          .from('products')
-          .select('*')
-          .eq('sku', val.toUpperCase())
-          .limit(1);
+    setIsLoading(true);
+    try {
+      let query = supabase
+        .from('products')
+        .select('*')
+        .eq('sku', upperVal)
+        .limit(1);
 
-        const { data, error } = await query.maybeSingle();
+      const { data, error } = await query.maybeSingle();
 
-        if (data && !error) {
-          setName(data.name);
-          setCategory(data.category);
-          setPrice(data.price.toString());
-          setQuantity(data.stock.toString());
-          setUnit(data.unit || 'dona');
-          setProductOriginStoreId(data.store_id || null);
-        } else {
-          showError(`Omborda bunday SKU kodi (${val.toUpperCase()}) topilmadi! Boshqa raqam kiriting.`);
-        }
-      } catch (err) {
-        console.error('Error fetching SKU:', err);
-      } finally {
-        setIsLoading(false);
+      if (data && !error) {
+        setName(data.name);
+        setCategory(data.category);
+        setPrice(data.price.toString());
+        setQuantity(data.stock.toString());
+        setUnit(data.unit || 'dona');
+        setProductOriginStoreId(data.store_id || null);
+      } else {
+        showError(`Omborda bunday shtrix kod (${upperVal}) topilmadi! O'zgartirib qayta urib ko'ring.`);
       }
+    } catch (err) {
+      console.error('Error fetching SKU:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
+
 
   const resetForm = () => {
     setSku('');
@@ -589,9 +667,9 @@ const ProductListings = () => {
       showError(`Bunday SKU (${sku.toUpperCase()}) bilan tovar allaqachon savdoga qo'yilgan! Boshqa SKU kiriting.`, 'warning');
       return true;
     }
-    if (!sku || sku.length !== 10 || (!isDataLoaded && !isLoading)) {
+    if (!sku || (!isDataLoaded && !isLoading)) {
       if (e && e.preventDefault) e.preventDefault();
-      showError(`Avval Omborda mavjud bo'lgan to'g'ri SKU kodini (10 ta belgi) kiriting!`);
+      showError(`Iltimos, shtrix kodni kiriting!`);
       return true;
     }
     return false;
@@ -895,24 +973,68 @@ const ProductListings = () => {
                   {/* LEFT COLUMN: Data Inputs */}
                   <div className="space-y-3 border-r-0 md:border-r border-slate-100 md:pr-4">
                     {/* SKU Input - Clean & Professional */}
-                    <div className={`bg-white p-3 rounded-2xl transition-all group ${sku.length > 0 && sku.length < 10 ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)] ring-1 ring-red-500' : 'border border-slate-200 focus-within:ring-2 focus-within:ring-brandRed/20'}`}>
-                      <label htmlFor="sku-input" className="block text-xs font-bold text-slate-900 mb-1.5 ml-1 flex items-center gap-2">
-                        <Hash size={12} className="text-brandRed" />
-                        SKU Kod (Ombordagi tahlil)
-                      </label>
+                    <div className={`bg-white p-3 rounded-2xl transition-all group ${(!isDataLoaded && sku.length > 0 && !isLoading) ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.2)] ring-1 ring-red-500' : 'border border-slate-200'} ${scannerErrorGlow ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)] bg-red-50 text-red-600' : ''}`}>
+                      <div className="flex justify-between items-end mb-1.5 ml-1">
+                        <label htmlFor="sku-input" className="block text-xs font-bold text-slate-900 flex items-center gap-2">
+                          <Hash size={12} className="text-brandRed" />
+                          Shtrix Kod
+                        </label>
+                        <div className="flex gap-1 bg-slate-50 p-0.5 rounded-lg border border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => setSkuInputMode('scanner')}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all uppercase ${skuInputMode === 'scanner' ? 'bg-white text-brandRed shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                          >
+                            Skaner
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSkuInputMode('manual')}
+                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all uppercase ${skuInputMode === 'manual' ? 'bg-white text-slate-800 shadow-sm border border-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                          >
+                            Qo'lda
+                          </button>
+                        </div>
+                      </div>
                       <div className="relative">
                         <input
                           id="sku-input"
                           type="text"
-                          maxLength={10}
+                          readOnly={skuInputMode === 'scanner'}
                           value={sku}
-                          onChange={(e) => handleSkuChange(e.target.value)}
-                          className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-0 focus:border-brandRed outline-none transition-all font-bold text-sm tracking-widest uppercase placeholder:text-slate-300 bg-slate-50/30 group-focus-within:bg-white"
-                          placeholder="OZI-16218A..."
-                          autoFocus
-                          title="SKU kodini kiriting"
+                          onChange={(e) => skuInputMode === 'manual' && setSku(e.target.value)}
+                          onPaste={(e) => {
+                            if (skuInputMode === 'manual') {
+                              const pastedText = e.clipboardData.getData('text').trim();
+                              if (pastedText) {
+                                setTimeout(() => handleScannerInput(pastedText), 50);
+                              }
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              // Manually trigger the fetch logic
+                              if (skuInputMode === 'manual') handleScannerInput(sku);
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-xl border border-slate-200 focus:ring-0 focus:border-brandRed outline-none transition-all font-mono font-bold text-sm tracking-widest uppercase placeholder:text-slate-300 bg-slate-50/30 group-focus-within:bg-white"
+                          placeholder={skuInputMode === 'scanner' ? "0000000000000" : "Shtrix kodni yozing..."}
+                          title={skuInputMode === 'scanner' ? "Faqat Skaner orqali!" : "Klaviaturada yozib Enter bosing"}
                         />
-                        {isLoading && (
+                        {sku && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              resetForm();
+                            }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 p-1.5 rounded-xl hover:bg-red-50 bg-white shadow-sm border border-slate-200 transition-all font-bold"
+                            title="Tozalash va boshidan boshlash"
+                          >
+                            <XCircle size={16} />
+                          </button>
+                        )}
+                        {!sku && isLoading && (
                           <div className="absolute right-3 top-1/2 -translate-y-1/2">
                             <Loader2 size={16} className="text-brandRed animate-spin" />
                           </div>

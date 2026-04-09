@@ -10,6 +10,7 @@ interface Profile {
   email: string;
   role: string;
   store_id?: string | null;
+  phone?: string | null;
   password_hint?: string;
   created_at: string;
 }
@@ -26,13 +27,13 @@ const Admins = () => {
   const [loading, setLoading] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newAdmin, setNewAdmin] = useState({ fullName: '', username: '', password: '', role: 'Manager', storeId: '' });
+  const [newAdmin, setNewAdmin] = useState({ fullName: '', username: '', password: '', role: 'Manager', storeId: '', phone: '' });
   const [submitError, setSubmitError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPass, setShowPass] = useState(false);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editingAdmin, setEditingAdmin] = useState({ id: '', fullName: '', username: '', role: '', storeId: '', password: '', lastPass: '' });
+  const [editingAdmin, setEditingAdmin] = useState({ id: '', fullName: '', username: '', role: '', storeId: '', password: '', lastPass: '', phone: '' });
   const [showEditPass, setShowEditPass] = useState(false);
   const [showLastPass, setShowLastPass] = useState(false);
 
@@ -99,14 +100,20 @@ const Admins = () => {
       // Update store_id manually in profiles since trigger won't catch custom columns right away
       if (userData?.user?.id) {
         const { error: profileError } = await supabaseAdmin.from('profiles')
-          .update({ store_id: newAdmin.storeId || null })
+          .update({ store_id: newAdmin.storeId || null, phone: newAdmin.phone || null })
           .eq('id', userData.user.id);
           
         if (profileError) console.error("Profile update error:", profileError.message);
       }
-
+        // Sync store's manager info if it's a Manager
+        if (newAdmin.role === 'Manager' && newAdmin.storeId) {
+          const { error: storeSyncError } = await supabaseAdmin.from('stores')
+            .update({ manager_name: newAdmin.fullName, manager_phone: newAdmin.phone || '' })
+            .eq('id', newAdmin.storeId);
+          if (storeSyncError) console.error("Store sync error:", storeSyncError.message);
+        }
       setIsModalOpen(false);
-      setNewAdmin({ fullName: '', username: '', password: '', role: 'Manager', storeId: '' });
+      setNewAdmin({ fullName: '', username: '', password: '', role: 'Manager', storeId: '', phone: '' });
       fetchAdminsOnly();
 
     } catch (err: any) {
@@ -127,11 +134,20 @@ const Admins = () => {
       // 1. O'zgarishlarni to'g'ridan-to'g'ri `profiles` jadvaliga yozamiz (bu trigger orqali ham update bo'ladi lekin ishonch uchun)
       const { error: profileError } = await supabaseAdmin.from('profiles')
         .update({ 
-          store_id: editingAdmin.storeId || null 
+          store_id: editingAdmin.storeId || null,
+          phone: editingAdmin.phone || null
         })
         .eq('id', editingAdmin.id);
 
       if (profileError) throw new Error("Profilni yangilashda xatolik: " + profileError.message);
+
+      // Store table synchronization
+      if (editingAdmin.role === 'Manager' && editingAdmin.storeId) {
+        const { error: storeSyncError } = await supabaseAdmin.from('stores')
+          .update({ manager_name: editingAdmin.fullName, manager_phone: editingAdmin.phone || '' })
+          .eq('id', editingAdmin.storeId);
+        if (storeSyncError) console.error("Store edit sync error:", storeSyncError.message);
+      }
 
       // 2. Parol, Email va asosiy ma'lumotlarni Auth orqali yozamiz, toki Trigger to'g'ri sinxronlasin
       const authUpdates: any = {
@@ -252,7 +268,7 @@ const Admins = () => {
           <button 
             onClick={() => {
               setSubmitError('');
-              setNewAdmin({ fullName: '', username: '', password: '', role: 'Manager', storeId: '' });
+              setNewAdmin({ fullName: '', username: '', password: '', role: 'Manager', storeId: '', phone: '' });
               setIsModalOpen(true);
             }}
             className="whitespace-nowrap bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-all shadow-lg shadow-yellow-500/20"
@@ -314,7 +330,8 @@ const Admins = () => {
                             role: admin.role, 
                             storeId: admin.store_id || '',
                             password: '',
-                            lastPass: admin.password_hint || ''
+                            lastPass: admin.password_hint || '',
+                            phone: admin.phone || ''
                           });
                           setIsEditModalOpen(true);
                         }}
@@ -377,7 +394,9 @@ const Admins = () => {
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none bg-white font-medium text-slate-700 appearance-none"
                   >
                     <option value="" disabled>Filial (do'kon) ni tanlang</option>
-                    {stores.map(store => (
+                    {stores
+                      .filter(store => newAdmin.role !== 'Manager' || !admins.some(a => a.role === 'Manager' && a.store_id === store.id))
+                      .map(store => (
                       <option key={store.id} value={store.id}>{store.name}</option>
                     ))}
                   </select>
@@ -390,9 +409,14 @@ const Admins = () => {
               </div>
               
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Telefon raqami</label>
+                <input required type="text" value={newAdmin.phone} onChange={e => setNewAdmin({...newAdmin, phone: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none" minLength={9} maxLength={17} placeholder="+998 90 123 45 67" />
+              </div>
+              
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Login (username)</label>
                 <div className="flex gap-2">
-                  <input autoComplete="off" required type="text" value={newAdmin.username} onChange={e => setNewAdmin({...newAdmin, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')})} className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none" minLength={3} maxLength={15} placeholder="xodim_login" />
+                  <input autoComplete="off" required type="text" value={newAdmin.username} onChange={e => setNewAdmin({...newAdmin, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')})} className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none" minLength={3} maxLength={30} placeholder="xodim_login" />
                   <div className="inline-flex items-center px-4 rounded-xl border border-gray-200 bg-slate-50 text-slate-400 text-sm font-medium whitespace-nowrap">@raketa.uz</div>
                 </div>
               </div>
@@ -454,7 +478,9 @@ const Admins = () => {
                       className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none bg-white font-medium text-slate-700 appearance-none"
                     >
                       <option value="" disabled>Filial (do'kon) ni tanlang</option>
-                      {stores.map(store => (
+                      {stores
+                        .filter(store => editingAdmin.role !== 'Manager' || !admins.some(a => a.role === 'Manager' && a.store_id === store.id && a.id !== editingAdmin.id))
+                        .map(store => (
                         <option key={store.id} value={store.id}>{store.name}</option>
                       ))}
                     </select>
@@ -468,9 +494,14 @@ const Admins = () => {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Telefon raqami</label>
+                <input required type="text" value={editingAdmin.phone} onChange={e => setEditingAdmin({...editingAdmin, phone: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none" minLength={9} maxLength={17} placeholder="+998 90 123 45 67" />
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Login (username)</label>
                 <div className="flex gap-2">
-                  <input autoComplete="off" required type="text" value={editingAdmin.username} onChange={e => setEditingAdmin({...editingAdmin, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')})} className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none" minLength={3} maxLength={15} placeholder="xodim_login" />
+                  <input autoComplete="off" required type="text" value={editingAdmin.username} onChange={e => setEditingAdmin({...editingAdmin, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '')})} className="flex-1 px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none" minLength={3} maxLength={30} placeholder="xodim_login" />
                   <div className="inline-flex items-center px-4 rounded-xl border border-gray-200 bg-slate-50 text-slate-400 text-sm font-medium whitespace-nowrap">@raketa.uz</div>
                 </div>
               </div>
