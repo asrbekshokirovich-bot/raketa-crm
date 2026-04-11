@@ -3,7 +3,7 @@ import https from 'https';
 
 const API_KEY = 'sbp_f8634d1e2f10e5a5da6065421645cab260f3ba1b';
 const PROJECT_REF = 'ffddohkyuegzywkepfsk';
-const SQL_FILE = 'assign_products.sql';
+const SQL_FILE = 'create_announcements.sql';
 
 const sqlContent = fs.readFileSync(SQL_FILE, 'utf8');
 

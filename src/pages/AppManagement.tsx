@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
+import BannersManager from '../components/BannersManager';
+import AnnouncementsManager from '../components/AnnouncementsManager';
+import ContactSettingsManager from '../components/ContactSettingsManager';
 import { 
   Users, 
   Settings, 
@@ -14,12 +17,14 @@ import {
   ShieldCheck,
   UserX,
   Star,
-  MapPin
+  MapPin,
+  Megaphone
 } from 'lucide-react';
 
 const AppManagement = () => {
   const [activeApp, setActiveApp] = useState<'customer' | 'courier'>('customer');
   const [activeTab, setActiveTab] = useState<string>('users');
+  const [activeSettingTab, setActiveSettingTab] = useState<string>('banners');
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -52,19 +57,14 @@ const AppManagement = () => {
   };
 
   const customerTabs = [
-    { id: 'banners', name: 'Bannerlar', icon: <ImageIcon size={20} /> },
     { id: 'promos', name: 'Promokodlar', icon: <Star size={20} /> },
-    { id: 'settings', name: 'Sozlamalar', icon: <Settings size={20} /> },
     { id: 'users', name: 'Mijozlar', icon: <Users size={20} /> },
-    { id: 'versions', name: 'Versiya', icon: <Smartphone size={20} /> },
+    { id: 'settings', name: 'Sozlamalar', icon: <Settings size={20} /> },
   ];
 
   const courierTabs = [
-    { id: 'banners', name: 'Bannerlar', icon: <ImageIcon size={20} /> },
     { id: 'users', name: 'Kuryerlar', icon: <Users size={20} /> },
-    { id: 'zones', name: 'Hududlar (Tarif)', icon: <MapPin size={20} /> },
     { id: 'settings', name: 'Sozlamalar', icon: <Settings size={20} /> },
-    { id: 'versions', name: 'Versiya', icon: <Smartphone size={20} /> },
   ];
 
   const currentTabs = activeApp === 'customer' ? customerTabs : courierTabs;
@@ -233,10 +233,67 @@ const AppManagement = () => {
         </div>
       )}
 
-      {activeTab !== 'users' && !['promos', 'zones', 'banners'].includes(activeTab) && (
-        <div className="bg-white py-32 rounded-[60px] border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300">
-           <ImageIcon size={80} strokeWidth={1} />
-           <p className="text-xl font-black mt-6 text-slate-800 uppercase tracking-tight italic">Yaqin kunda...</p>
+      {activeTab === 'settings' && (
+        <div className="flex flex-col lg:flex-row gap-6 animate-in slide-in-from-bottom-4 duration-500">
+          {/* Settings Sidebar */}
+          <div className="w-full lg:w-72 bg-white rounded-[40px] p-4 border border-gray-100 shadow-sm flex flex-col gap-2 h-fit">
+            <div className="p-4 mb-2">
+              <h3 className="text-lg font-black text-slate-800 tracking-tight">Ilova sozlamalari</h3>
+              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Tizimni moslashtirish</p>
+            </div>
+            
+            {[
+              { id: 'banners', name: 'Bannerlar', icon: <ImageIcon size={18} /> },
+              ...(activeApp === 'courier' 
+                ? [{ id: 'zones', name: 'Hududlar (Tarif)', icon: <MapPin size={18} /> }]
+                : []
+              ),
+              { id: 'general', name: 'Umumiy e\'lonlar', icon: <Megaphone size={18} /> },
+              { id: 'contact', name: 'Aloqa sozlamalari', icon: <Phone size={18} /> },
+              { id: 'versions', name: 'Versiya', icon: <Smartphone size={18} /> },
+            ].map(tab => (
+               <button
+                  key={tab.id}
+                  onClick={() => setActiveSettingTab(tab.id)}
+                  className={`px-5 py-4 rounded-[20px] flex items-center gap-4 text-sm font-black transition-all text-left group ${
+                    activeSettingTab === tab.id 
+                      ? 'bg-slate-50 text-sidebarDark shadow-sm border border-gray-100' 
+                      : 'text-slate-500 hover:bg-slate-50 border border-transparent'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+                    activeSettingTab === tab.id 
+                      ? 'bg-white shadow-sm text-sidebarDark' 
+                      : 'bg-slate-100 text-slate-400 group-hover:bg-white group-hover:text-slate-500'
+                  }`}>
+                    {tab.icon}
+                  </div>
+                  {tab.name}
+                </button>
+            ))}
+          </div>
+
+          {/* Settings Content */}
+          <div className="flex-1">
+            {activeSettingTab === 'banners' && <BannersManager />}
+            {activeSettingTab === 'general' && <AnnouncementsManager />}
+            {activeSettingTab === 'contact' && <ContactSettingsManager />}
+            
+            {activeSettingTab !== 'banners' && activeSettingTab !== 'general' && activeSettingTab !== 'contact' && (
+              <div className="bg-white py-32 rounded-[60px] border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300">
+                 <Settings size={80} strokeWidth={1} />
+                 <p className="text-xl font-black mt-6 text-slate-800 uppercase tracking-tight italic">Yaqin kunda...</p>
+                 <p className="text-sm mt-2 text-slate-500 font-bold whitespace-nowrap">Ushbu bo'lim ustida qizg'in ish olib borilmoqda.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab !== 'users' && activeTab !== 'settings' && (
+        <div className="bg-white py-32 rounded-[60px] border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300 animate-in fade-in duration-500">
+           <Star size={80} strokeWidth={1} className="text-slate-200 mb-6" />
+           <p className="text-xl font-black text-slate-800 uppercase tracking-tight italic">Yaqin kunda...</p>
            <p className="text-sm mt-2 text-slate-500 font-bold whitespace-nowrap">Ushbu bo'lim ustida qizg'in ish olib borilmoqda.</p>
         </div>
       )}
