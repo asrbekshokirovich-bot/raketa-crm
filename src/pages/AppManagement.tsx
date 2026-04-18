@@ -3,6 +3,9 @@ import { supabase } from '../services/supabase';
 import BannersManager from '../components/BannersManager';
 import AnnouncementsManager from '../components/AnnouncementsManager';
 import ContactSettingsManager from '../components/ContactSettingsManager';
+import RegionSettingsManager from '../components/RegionSettingsManager';
+import PromosManager from '../components/PromosManager';
+import DeliveryPricingManager from '../components/DeliveryPricingManager';
 import { 
   Users, 
   Settings, 
@@ -16,15 +19,18 @@ import {
   Calendar,
   ShieldCheck,
   UserX,
-  Star,
   MapPin,
-  Megaphone
+  Megaphone,
+  Settings2,
+  TicketPercent,
+  Truck
 } from 'lucide-react';
 
 const AppManagement = () => {
   const [activeApp, setActiveApp] = useState<'customer' | 'courier'>('customer');
   const [activeTab, setActiveTab] = useState<string>('users');
   const [activeSettingTab, setActiveSettingTab] = useState<string>('banners');
+  const [activePromoTab, setActivePromoTab] = useState<string>('coupons');
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -57,8 +63,8 @@ const AppManagement = () => {
   };
 
   const customerTabs = [
-    { id: 'promos', name: 'Promokodlar', icon: <Star size={20} /> },
     { id: 'users', name: 'Mijozlar', icon: <Users size={20} /> },
+    { id: 'promos', name: 'Aksiya va Narxlar', icon: <TicketPercent size={20} /> },
     { id: 'settings', name: 'Sozlamalar', icon: <Settings size={20} /> },
   ];
 
@@ -250,6 +256,7 @@ const AppManagement = () => {
               ),
               { id: 'general', name: 'Umumiy e\'lonlar', icon: <Megaphone size={18} /> },
               { id: 'contact', name: 'Aloqa sozlamalari', icon: <Phone size={18} /> },
+              { id: 'app_settings', name: 'Sozlamalar', icon: <Settings2 size={18} /> },
               { id: 'versions', name: 'Versiya', icon: <Smartphone size={18} /> },
             ].map(tab => (
                <button
@@ -278,8 +285,9 @@ const AppManagement = () => {
             {activeSettingTab === 'banners' && <BannersManager />}
             {activeSettingTab === 'general' && <AnnouncementsManager />}
             {activeSettingTab === 'contact' && <ContactSettingsManager />}
+            {activeSettingTab === 'app_settings' && <RegionSettingsManager />}
             
-            {activeSettingTab !== 'banners' && activeSettingTab !== 'general' && activeSettingTab !== 'contact' && (
+            {activeSettingTab !== 'banners' && activeSettingTab !== 'general' && activeSettingTab !== 'contact' && activeSettingTab !== 'app_settings' && (
               <div className="bg-white py-32 rounded-[60px] border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300">
                  <Settings size={80} strokeWidth={1} />
                  <p className="text-xl font-black mt-6 text-slate-800 uppercase tracking-tight italic">Yaqin kunda...</p>
@@ -290,13 +298,58 @@ const AppManagement = () => {
         </div>
       )}
 
-      {activeTab !== 'users' && activeTab !== 'settings' && (
-        <div className="bg-white py-32 rounded-[60px] border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300 animate-in fade-in duration-500">
-           <Star size={80} strokeWidth={1} className="text-slate-200 mb-6" />
-           <p className="text-xl font-black text-slate-800 uppercase tracking-tight italic">Yaqin kunda...</p>
-           <p className="text-sm mt-2 text-slate-500 font-bold whitespace-nowrap">Ushbu bo'lim ustida qizg'in ish olib borilmoqda.</p>
+      {activeTab === 'promos' && (
+        <div className="flex flex-col lg:flex-row gap-6 animate-in slide-in-from-bottom-4 duration-500">
+          {/* Promo Sidebar */}
+          <div className="w-full lg:w-72 bg-white rounded-[40px] p-4 border border-gray-100 shadow-sm flex flex-col gap-2 h-fit">
+            <div className="p-4 mb-2">
+              <h3 className="text-lg font-black text-slate-800 tracking-tight">Aksiya va Narxlar</h3>
+              <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Marketing boshqaruvi</p>
+            </div>
+            
+            {[
+              { id: 'coupons', name: 'Promo kodlar', icon: <TicketPercent size={18} /> },
+              { id: 'delivery', name: 'Dastavka narxi', icon: <Truck size={18} /> },
+            ].map(tab => (
+               <button
+                  key={tab.id}
+                  onClick={() => setActivePromoTab(tab.id)}
+                  className={`px-5 py-4 rounded-[20px] flex items-center gap-4 text-sm font-black transition-all text-left group ${
+                    activePromoTab === tab.id 
+                      ? 'bg-slate-50 text-sidebarDark shadow-sm border border-gray-100' 
+                      : 'text-slate-500 hover:bg-slate-50 border border-transparent'
+                  }`}
+                >
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${
+                    activePromoTab === tab.id 
+                      ? 'bg-white shadow-sm text-sidebarDark' 
+                      : 'bg-slate-100 text-slate-400 group-hover:bg-white group-hover:text-slate-500'
+                  }`}>
+                    {tab.icon}
+                  </div>
+                  {tab.name}
+                </button>
+            ))}
+          </div>
+
+          {/* Promo Content */}
+          <div className="flex-1">
+            {activePromoTab === 'coupons' && <PromosManager />}
+            {activePromoTab === 'delivery' && <DeliveryPricingManager />}
+            
+            {activePromoTab !== 'coupons' && activePromoTab !== 'delivery' && (
+              <div className="bg-white py-32 rounded-[60px] border border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300">
+                 <TicketPercent size={80} strokeWidth={1} />
+                 <p className="text-xl font-black mt-6 text-slate-800 uppercase tracking-tight italic">Yaqin kunda...</p>
+                 <p className="text-sm mt-2 text-slate-500 font-bold whitespace-nowrap">
+                   Ushbu bo'lim ustida ish ketmoqda.
+                 </p>
+              </div>
+            )}
+          </div>
         </div>
       )}
+
     </div>
   );
 };

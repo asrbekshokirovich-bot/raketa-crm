@@ -911,7 +911,7 @@ const ProductListings = () => {
       {/* Filters & Search */}
       <div className="flex flex-col md:flex-row gap-4 items-center justify-between mb-4">
         {/* Store View Toggles */}
-        {user?.role !== 'Owner' && (
+        {user?.role !== 'Owner' && user?.role !== 'Admin' && (
         <div className="flex bg-slate-100 p-1.5 rounded-xl w-full md:w-auto">
           <button
             onClick={() => setStoreViewFilter('all')}

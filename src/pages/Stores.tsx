@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../services/supabase';
-import { Plus, Store, MapPin, Phone, User as UserIcon, Loader2, Edit2, Trash2, XCircle, CheckCircle2, Image as ImageIcon, Map, Clock, ArrowRight } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { Plus, Store, MapPin, Phone, User as UserIcon, Loader2, Edit2, Trash2, XCircle, CheckCircle2, Map, Clock, ArrowRight, ChevronDown } from 'lucide-react';
 import L from 'leaflet';
 import StoreDashboard from '../components/StoreDashboard';
+import YandexStoreMap from '../components/YandexStoreMap';
 import { useAuth } from '../context/AuthContext';
 
 // Fix leaflet marker internal paths
@@ -14,15 +14,6 @@ if (typeof window !== 'undefined') {
     iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
     shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
   });
-}
-
-function LocationPicker({ position, setPosition }: { position: L.LatLng | null, setPosition: (p: L.LatLng) => void }) {
-  useMapEvents({
-    click(e) {
-      setPosition(e.latlng);
-    },
-  });
-  return position === null ? null : <Marker position={position} />;
 }
 
 interface StoreType {
@@ -37,6 +28,23 @@ interface StoreType {
   created_at: string;
 }
 
+const regionCoordinates: { [key: string]: [number, number] } = {
+  'Toshkent sh.': [41.311081, 69.240562],
+  'Toshkent vil.': [41.2291, 69.2227],
+  'Samarqand': [39.65417, 66.95972],
+  'Buxoro': [39.77472, 64.42861],
+  'Farg\'ona': [40.38444, 71.78444],
+  'Namangan': [41.00111, 71.66833],
+  'Andijon': [40.78333, 72.33333],
+  'Qashqadaryo': [38.86111, 65.78917],
+  'Surxondaryo': [37.22417, 67.27833],
+  'Navoiy': [40.10306, 65.37361],
+  'Jizzax': [40.11583, 67.84222],
+  'Sirdaryo': [40.48972, 68.78417],
+  'Xorazm': [41.37833, 60.36389],
+  'Qoraqalpog\'iston': [42.45333, 59.61028],
+};
+
 const Stores = () => {
   const { user } = useAuth();
   const [stores, setStores] = useState<StoreType[]>([]);
@@ -46,7 +54,7 @@ const Stores = () => {
   const [editingStore, setEditingStore] = useState<StoreType | null>(null);
   const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [storeToDelete, setStoreToDelete] = useState<string | null>(null);
-  const isOwner = user?.role === 'Owner';
+  const isOwner = user?.role === 'Owner' || user?.role === 'Admin';
   const isManager = user?.role === 'Manager';
   const isSotuvchiYokiOmborchi = user?.role === 'Omborchi' || user?.role === 'Sotuvchi';
   
@@ -55,10 +63,12 @@ const Stores = () => {
   const [address, setAddress] = useState('');
   const [status, setStatus] = useState<'Active' | 'Inactive' | '24/7'>('Active');
   const [location, setLocation] = useState('');
-  const [mapPosition, setMapPosition] = useState<L.LatLng | null>(null);
+  const [selectedRegion, setSelectedRegion] = useState('');
+  const [isRegionDropdownOpen, setIsRegionDropdownOpen] = useState(false);
+  const [mapPosition, setMapPosition] = useState<L.LatLng>(new L.LatLng(41.311081, 69.240562));
   
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
+  // Ref for closing custom dropdown on outside click
+  const regionDropdownRef = useRef<HTMLDivElement>(null);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -71,9 +81,62 @@ const Stores = () => {
   // Sync map click with location text
   useEffect(() => {
     if (mapPosition) {
-      setLocation(`${mapPosition.lat},${mapPosition.lng}`);
+      // Round to 6 decimal places (approx. 11cm accuracy) to match professional app standards
+      const lat = mapPosition.lat.toFixed(6);
+      const lng = mapPosition.lng.toFixed(6);
+      setLocation(`${lat},${lng}`);
     }
   }, [mapPosition]);
+
+  // Mapping geocoded regions to dropdown keys
+  const matchRegion = (geocodedRegion: string): string => {
+    if (!geocodedRegion) return '';
+    const r = geocodedRegion.toLowerCase();
+    
+    if (r.includes('tashkent') || r.includes('toshkent')) {
+      if (r.includes('shahar') || r.includes('город') || r.includes('city') || r.includes('sh.')) return 'Toshkent sh.';
+      return 'Toshkent vil.';
+    }
+    if (r.includes('samarqand')) return 'Samarqand';
+    if (r.includes('buxoro')) return 'Buxoro';
+    if (r.includes('andijon')) return 'Andijon';
+    if (r.includes('farg')) return "Farg'ona";
+    if (r.includes('namangan')) return 'Namangan';
+    if (r.includes('navoiy')) return 'Navoiy';
+    if (r.includes('qashqadaryo')) return 'Qashqadaryo';
+    if (r.includes('surxondaryo')) return 'Surxondaryo';
+    if (r.includes('jizzax')) return 'Jizzax';
+    if (r.includes('sirdaryo')) return 'Sirdaryo';
+    if (r.includes('xorazm')) return 'Xorazm';
+    if (r.includes('qoraqalpog')) return "Qoraqalpog'iston";
+    
+    return '';
+  };
+
+  const handleMapPositionChange = useCallback((pos: L.LatLng, geocodedAddress?: string, region?: string) => {
+    setMapPosition(pos);
+    if (geocodedAddress) {
+      setAddress(geocodedAddress);
+    }
+    
+    if (region) {
+      const matched = matchRegion(region);
+      if (matched) {
+        setSelectedRegion(matched);
+      }
+    }
+  }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (regionDropdownRef.current && !regionDropdownRef.current.contains(event.target as Node)) {
+        setIsRegionDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const fetchStores = async () => {
     try {
@@ -97,9 +160,8 @@ const Stores = () => {
     setAddress('');
     setStatus('Active');
     setLocation('');
-    setMapPosition(null);
-    setImageFile(null);
-    setExistingImageUrl(null);
+    setSelectedRegion('');
+    setMapPosition(new L.LatLng(41.311081, 69.240562));
     setEditingStore(null);
   };
 
@@ -130,8 +192,6 @@ const Stores = () => {
       setMapPosition(new L.LatLng(41.311081, 69.240562));
     }
 
-    setExistingImageUrl(store.image_url || null);
-    setImageFile(null);
     setIsModalOpen(true);
   };
 
@@ -141,32 +201,12 @@ const Stores = () => {
     
     setIsSubmitting(true);
     try {
-      let finalImageUrl = existingImageUrl;
-      
-      // Upload new image if selected
-      if (imageFile) {
-        const fileExt = imageFile.name.split('.').pop();
-        const fileName = `${Math.random().toString(36).substring(2, 15)}_${Date.now()}.${fileExt}`;
-        const filePath = `stores/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('product-images')
-          .upload(filePath, imageFile);
-
-        if (!uploadError) {
-          const { data: { publicUrl } } = supabase.storage
-            .from('product-images')
-            .getPublicUrl(filePath);
-          finalImageUrl = publicUrl;
-        }
-      }
-
       const storeData = {
         name, 
         address, 
         status,
         location: location.trim() || null,
-        image_url: finalImageUrl,
+        image_url: null, // We no longer use images for stores, only icons
         manager_name: "Biriktirilmagan",
         manager_phone: ""
       };
@@ -205,13 +245,31 @@ const Stores = () => {
   const confirmDelete = async () => {
     if (!storeToDelete) return;
     try {
+      setIsSubmitting(true);
+      
+      // 1. Clear any product listings associated with this store
+      await supabase
+        .from('product_listings')
+        .delete()
+        .eq('store_id', storeToDelete);
+      
+      // 2. Clear any employee associations (profiles) with this store to avoid FK errors
+      await supabase
+        .from('profiles')
+        .update({ store_id: null })
+        .eq('store_id', storeToDelete);
+
+      // 3. Now delete the store itself from Supabase
       const { error } = await supabase.from('stores').delete().eq('id', storeToDelete);
       if (error) throw error;
+      
       setStoreToDelete(null);
       fetchStores();
     } catch (err: any) {
       console.error('Error deleting store:', err);
       alert("O'chirishda xatolik yuz berdi:\n" + (err.message || JSON.stringify(err)));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -268,13 +326,9 @@ const Stores = () => {
               
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-3">
-                  {store.image_url ? (
-                    <img src={store.image_url} alt={store.name} className="w-12 h-12 rounded-2xl object-cover shrink-0 border border-slate-100 shadow-sm" />
-                  ) : (
-                    <div className="w-12 h-12 rounded-2xl bg-orange-50 text-orange-500 flex items-center justify-center shrink-0">
-                      <Store size={24} strokeWidth={2.5} />
-                    </div>
-                  )}
+                  <div className="w-12 h-12 rounded-2xl bg-sidebarDark/5 text-sidebarDark flex items-center justify-center shrink-0 border border-slate-100 shadow-sm">
+                    <Store size={24} strokeWidth={2.5} />
+                  </div>
                   <div>
                     <h3 className="font-bold text-slate-900 text-lg leading-tight">{store.name}</h3>
                     <span className={`inline-flex items-center px-2 py-0.5 mt-1 rounded-md text-[10px] font-black uppercase tracking-wider ${
@@ -402,26 +456,10 @@ const Stores = () => {
               <form onSubmit={handleSubmit} className="space-y-5">
                 
                 <div className="flex gap-4 items-center">
-                  <label className="shrink-0 w-24 h-24 rounded-2xl border border-dashed border-slate-300 bg-slate-50 flex flex-col items-center justify-center cursor-pointer hover:border-mustard transition-colors overflow-hidden relative group">
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      className="hidden" 
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) setImageFile(e.target.files[0]);
-                      }}
-                    />
-                    {imageFile ? (
-                      <img src={URL.createObjectURL(imageFile)} alt="Upload preview" className="w-full h-full object-cover" />
-                    ) : existingImageUrl ? (
-                      <img src={existingImageUrl} alt="Store" className="w-full h-full object-cover" />
-                    ) : (
-                      <>
-                        <ImageIcon size={24} className="text-slate-400 mb-1 group-hover:text-mustard" />
-                        <span className="text-[10px] text-slate-500 font-medium tracking-wide">RASM</span>
-                      </>
-                    )}
-                  </label>
+                  <div className="shrink-0 w-24 h-24 rounded-2xl border border-slate-100 bg-slate-50 flex flex-col items-center justify-center transition-colors overflow-hidden relative group">
+                    <Store size={32} className="text-sidebarDark" />
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mt-1">DOKON</span>
+                  </div>
                   
                   <div className="flex-1">
                     <label className="block text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-1.5 ml-1">Do'kon Nomi / Filial nomi</label>
@@ -448,27 +486,69 @@ const Stores = () => {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-1.5 ml-1">Lokatsiya (Xaritadan tanlang)</label>
-                  <input
-                    type="text"
-                    value={location}
-                    onChange={e => setLocation(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all font-medium text-sm bg-slate-50 focus:bg-white mb-2"
-                    placeholder="Xaritadan bosing yoki koordinata kiriting..."
-                  />
-                  <div className="h-[200px] w-full rounded-xl overflow-hidden border border-slate-200 bg-slate-50 relative z-0">
-                    <MapContainer 
-                      center={mapPosition || [41.311081, 69.240562]} 
-                      zoom={12} 
-                      style={{ height: '100%', width: '100%' }}
+                <div className="space-y-4">
+                  <div className="relative" ref={regionDropdownRef}>
+                    <label className="block text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-1.5 ml-1 flex items-center justify-between">
+                      <span>Viloyatni tanlang</span>
+                      <span className="text-[10px] text-slate-400 font-normal lowercase">(Osonroq topish uchun)</span>
+                    </label>
+                    
+                    <button
+                      type="button"
+                      onClick={() => setIsRegionDropdownOpen(!isRegionDropdownOpen)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 hover:border-blue-300 focus:ring-2 focus:ring-blue-500/30 outline-none transition-all font-medium text-sm bg-slate-50 hover:bg-white text-left flex items-center justify-between"
                     >
-                      <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      <span className={selectedRegion ? "text-slate-900" : "text-slate-400"}>
+                        {selectedRegion || "Viloyatni tanlang..."}
+                      </span>
+                      <ChevronDown size={16} className={`text-slate-400 transition-transform ${isRegionDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isRegionDropdownOpen && (
+                      <div className="absolute z-50 mt-2 w-full bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden py-1">
+                        <div className="max-h-[180px] overflow-y-auto select-none custom-scrollbar">
+                          {Object.keys(regionCoordinates).map(r => (
+                            <button
+                              key={r}
+                              type="button"
+                              className={`w-full text-left px-4 py-2.5 text-sm transition-colors ${
+                                selectedRegion === r 
+                                  ? 'bg-blue-50 text-blue-600 font-bold' 
+                                  : 'text-slate-700 hover:bg-slate-50'
+                              }`}
+                              onClick={() => {
+                                setSelectedRegion(r);
+                                setIsRegionDropdownOpen(false);
+                                if (regionCoordinates[r]) {
+                                  const coords = regionCoordinates[r];
+                                  setMapPosition(new L.LatLng(coords[0], coords[1]));
+                                }
+                              }}
+                            >
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-900 uppercase tracking-wider mb-1.5 ml-1">Lokatsiya (Xaritadan tanlang)</label>
+                    <input
+                      type="text"
+                      value={location}
+                      onChange={e => setLocation(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none transition-all font-medium text-sm bg-slate-50 focus:bg-white mb-2"
+                      placeholder="Xaritadan bosing yoki koordinata kiriting..."
+                    />
+                    <div className="h-[200px] w-full mt-2 relative z-0">
+                      <YandexStoreMap 
+                        center={mapPosition || new L.LatLng(41.311081, 69.240562)}
+                        onPositionChange={handleMapPositionChange}
+                        height="200px"
                       />
-                      <LocationPicker position={mapPosition} setPosition={setMapPosition} />
-                    </MapContainer>
+                    </div>
                   </div>
                 </div>
 

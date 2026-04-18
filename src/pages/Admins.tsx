@@ -76,7 +76,7 @@ const Admins = () => {
   const handleAddAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError('');
-    if (user?.role !== 'Owner') {
+    if (user?.role !== 'Owner' && user?.role !== 'Admin') {
       setSubmitError("Faqat Owner hisobi yangi xodim qo'sha oladi!");
       return;
     }
@@ -203,8 +203,8 @@ const Admins = () => {
   const confirmDelete = async () => {
     if (!adminToDelete || !user) return;
     
-    if (user.role.toLowerCase() !== 'owner') {
-      alert("Faqat Owner xodimlarni o'chira oladi!");
+    if (!user || (user.role.toLowerCase() !== 'owner' && user.role.toLowerCase() !== 'admin')) {
+      alert("Faqat bo'lim boshliqlari xodimlarni o'chira oladi!");
       return;
     }
 
@@ -226,9 +226,9 @@ const Admins = () => {
     }
   };
 
-  const filteredAdmins = admins.filter(admin => 
-    admin.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    admin.role.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredAdmins = (admins || []).filter(admin => 
+    (admin.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (admin.role || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const getStoreName = (storeId?: string | null) => {
@@ -237,7 +237,7 @@ const Admins = () => {
     return store ? <span className="text-gray-900 font-medium">{store.name}</span> : <span className="text-gray-400 text-xs italic">Topilmadi</span>;
   };
 
-  if (user?.role !== 'Owner') {
+  if (user?.role !== 'Owner' && user?.role !== 'Admin') {
     return (
       <div className="p-8 max-w-7xl mx-auto flex flex-col items-center justify-center h-[60vh] text-center">
         <Shield size={64} className="text-red-500 mb-4" />
@@ -303,9 +303,11 @@ const Admins = () => {
                   <td className="p-4">{getStoreName(admin.store_id)}</td>
                   <td className="p-4">
                     <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                      admin.role === 'Owner' ? 'bg-zinc-100 text-zinc-900' : 'bg-blue-50 text-blue-600'
+                      admin.role === 'Owner' ? 'bg-zinc-900 text-white' : 
+                      admin.role === 'Admin' ? 'bg-amber-500 text-white' : 
+                      'bg-blue-50 text-blue-600'
                     }`}>
-                      {admin.role}
+                      {admin.role === 'Owner' ? 'Asoschi' : admin.role === 'Admin' ? 'Admin' : admin.role}
                     </span>
                   </td>
                   <td className="p-4 text-right">
@@ -434,6 +436,7 @@ const Admins = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vazifasi (Role)</label>
                 <select title="Rolni tanlang" value={newAdmin.role} onChange={e => setNewAdmin({...newAdmin, role: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none bg-white font-medium text-slate-700">
+                  <option value="Admin">Admin (Administrator)</option>
                   <option value="Manager">Manager (Menejer)</option>
                   <option value="Sotuvchi">Sotuvchi (Sotuvchi)</option>
                   <option value="Omborchi">Omborchi (Omborchi)</option>
@@ -515,6 +518,7 @@ const Admins = () => {
                   </div>
                 ) : (
                   <select title="Rolni tanlang" value={editingAdmin.role} onChange={e => setEditingAdmin({...editingAdmin, role: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none bg-white font-medium text-slate-700">
+                    <option value="Admin">Admin (Administrator)</option>
                     <option value="Manager">Manager (Menejer)</option>
                     <option value="Sotuvchi">Sotuvchi (Sotuvchi)</option>
                     <option value="Omborchi">Omborchi (Omborchi)</option>

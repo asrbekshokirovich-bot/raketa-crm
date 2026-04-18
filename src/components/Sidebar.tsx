@@ -36,7 +36,7 @@ const Sidebar = () => {
   }
 
   // Dynamically render privileged sections ONLY for true Owners
-  if (user?.role === 'Owner') {
+  if (user?.role === 'Owner' || user?.role === 'Admin') {
     // Insert Finance right after Dashboard (index 1)
     navItems.splice(1, 0, { name: 'Finance', path: '/finance', icon: <Wallet size={20} /> });
     // Push Admins to the very bottom

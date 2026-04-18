@@ -58,6 +58,7 @@ const Inventory = () => {
   const [pricePerUnit, setPricePerUnit] = useState(''); 
   const [copiedSku, setCopiedSku] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [existingSkuSearch, setExistingSkuSearch] = useState('');
   const [isSkuDropdownOpen, setIsSkuDropdownOpen] = useState(false);
   const [infoModalData, setInfoModalData] = useState<{name: string, sku: string, creatorName: string} | null>(null);
   
@@ -146,6 +147,7 @@ const Inventory = () => {
        // It exists somewhere globally! Route safely to 'existing' pane.
        setReceiveMode('existing');
        setSelectedSku(scannedCode);
+       setExistingSkuSearch(scannedCode);
     } else {
        // Completely new SKU globally
        setReceiveMode('new');
@@ -225,7 +227,21 @@ const Inventory = () => {
             return;
           }
 
-          processSkuSelection(scannedCode);
+          if (isModalOpen) {
+            if (receiveMode === 'existing') {
+              setExistingSkuSearch(scannedCode);
+              const match = items.find(i => i.sku === scannedCode);
+              if (match) {
+                setSelectedSku(scannedCode);
+              } else {
+                setSelectedSku('');
+              }
+            } else {
+              setNewProduct(prev => ({ ...prev, sku: scannedCode }));
+            }
+          } else {
+            processSkuSelection(scannedCode);
+          }
         }
       }
     };
@@ -347,13 +363,20 @@ const Inventory = () => {
           }
         }
       } else {
-        if (user?.role === 'Owner' && activeStore === 'ALL') {
+        if ((user?.role === 'Owner' || user?.role === 'Admin') && activeStore === 'ALL') {
           showError("Asoschi (Owner) tizimga yangi tovar kiritishdan oldin tepadagi menyudan aniq bitta filialni tanlashi shart. 'Barcha Filiallar' rejimida tovar qo'shib bo'lmaydi.");
           return;
         }
 
         if (!newProduct.sku || newProduct.sku.trim() === '') {
           showError("Iltimos, shtrix kodni (SKU) kiriting!");
+          return;
+        }
+
+        // Check if SKU already exists globally
+        const skuExists = items.some(i => i.sku.trim().toLowerCase() === newProduct.sku.trim().toLowerCase());
+        if (skuExists) {
+          showError(`Ushbu SKU (${newProduct.sku.trim()}) tizimda allaqachon mavjud! Iltimos, "Mavjud SKU" bo'limidan foydalaning yoki boshqa kod kiriting.`);
           return;
         }
 
@@ -377,9 +400,13 @@ const Inventory = () => {
 
       await fetchInventory(); // Refresh list
       handleCloseModal();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Receive error:', err);
-      alert('Xatolik yuz berdi. Iltimos qaytadan urinib ko\'ring.');
+      if (err?.code === '23505') {
+        alert(`Bu shtrix-kod (${newProduct.sku || selectedSku}) tizimda allaqachon mavjud! Iltimos "Mavjud SKU" bo'limini tekshirib ko'ring.`);
+      } else {
+        alert('Xatolik yuz berdi. Iltimos qaytadan urinib ko\'ring.');
+      }
     }
   };
 
@@ -404,6 +431,7 @@ const Inventory = () => {
 
   const resetModal = () => {
     setSelectedSku('');
+    setExistingSkuSearch('');
     setQuantity('');
     setPricePerUnit('');
     setNewProduct({ name: '', sku: '', category: 'Oziq-ovqat', unit: 'dona', minStock: 10 });
@@ -540,7 +568,7 @@ const Inventory = () => {
         <>
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between mb-4">
             {/* Store View Toggles */}
-            {user?.role !== 'Owner' && (
+            {user?.role !== 'Owner' && user?.role !== 'Admin' && (
             <div className="flex bg-slate-100 p-1.5 rounded-xl w-full md:w-auto">
               <button
                 onClick={() => setStoreViewFilter('all')}
@@ -868,6 +896,7 @@ const Inventory = () => {
                           <option>Non va un</option>
                           <option>Maishiy kimyo</option>
                           <option>Bolalar oziq-ovqati</option>
+                          <option>O'quv qurollari</option>
                           <option>Go'zallik</option>
                           <option>Uy hayvonlari</option>
                           <option>Boshqalar</option>
@@ -891,44 +920,90 @@ const Inventory = () => {
                 )}
 
                 {receiveMode === 'existing' && (
-                  <div className="relative">
-                    <label className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">Mahsulotni tanlang (SKU)</label>
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setIsSkuDropdownOpen(!isSkuDropdownOpen)}
-                        className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-sidebarDark/10 outline-none transition-all bg-white font-bold text-slate-700 flex justify-between items-center"
-                      >
-                        <span className={selectedSku ? '' : 'text-slate-400 font-medium'}>
-                          {selectedSku 
-                            ? items.find(i => i.sku === selectedSku) ? `${selectedSku} - ${items.find(i => i.sku === selectedSku)?.name}` : selectedSku
-                            : 'SKU tanlang...'}
-                        </span>
-                        <ChevronDown size={20} className={`text-slate-400 transition-transform ${isSkuDropdownOpen ? 'rotate-180' : ''}`} />
-                      </button>
-                      
-                      {isSkuDropdownOpen && (
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[110] py-1">
-                          {/* ~48px per item, max 4 items = ~195px */}
-                          <ul className="max-h-[195px] overflow-y-auto custom-scrollbar">
-                            <li
-                              onClick={() => { setSelectedSku(''); setIsSkuDropdownOpen(false); }}
-                              className="px-4 py-3 hover:bg-slate-50 cursor-pointer text-sm font-medium text-slate-500 border-b border-slate-50"
-                            >
-                              SKU tanlang...
-                            </li>
-                            {items.map(item => (
-                              <li
-                                key={item.id}
-                                onClick={() => { processSkuSelection(item.sku); setIsSkuDropdownOpen(false); }}
-                                className={`px-4 py-3 hover:bg-slate-50 cursor-pointer text-sm font-bold border-b border-slate-50 transition-colors ${selectedSku === item.sku ? 'bg-sidebarDark/5 text-sidebarDark border-l-4 border-l-sidebarDark pl-3' : 'text-slate-700'}`}
-                              >
-                                {item.sku} - {item.name}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">Shtrix kod (Skanerlang yoki yozing)</label>
+                      <div className="relative">
+                        <input 
+                          title="Shtrix kodni qidirish yoki skanerlang"
+                          type="text" 
+                          placeholder="Shtrix kodni kiriting..."
+                          value={existingSkuSearch}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setExistingSkuSearch(val);
+                            // Auto-select if match found
+                            const match = items.find(i => i.sku === val);
+                            if (match) {
+                              setSelectedSku(val);
+                            }
+                          }}
+                          className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-sidebarDark/10 outline-none transition-all font-mono font-bold text-lg tracking-widest text-slate-700 bg-white shadow-sm"
+                        />
+                        {existingSkuSearch && (
+                          <button
+                            title="Tozalash"
+                            type="button"
+                            onClick={() => { setExistingSkuSearch(''); setSelectedSku(''); }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 p-1 rounded-full hover:bg-red-50"
+                          >
+                            <XCircle size={18} />
+                          </button>
+                        )}
+                      </div>
+                      {existingSkuSearch && !selectedSku && (
+                        <p className="text-[10px] font-bold text-red-500 mt-1.5 ml-1.5 uppercase tracking-wider animate-pulse">
+                          Mahsulot omborda topilmadi! Iltimos "Yangi SKU" bo'limiga o'ting.
+                        </p>
                       )}
+                    </div>
+
+                    <div className="relative">
+                      <label className="block text-sm font-bold text-slate-700 mb-1.5 ml-1">Mahsulot</label>
+                      <div className="relative">
+                        <button
+                          title="Mahsulotlar ro'yxatini ochish"
+                          type="button"
+                          onClick={() => setIsSkuDropdownOpen(!isSkuDropdownOpen)}
+                          className="w-full px-4 py-3 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-sidebarDark/10 outline-none transition-all bg-white font-bold text-slate-700 flex justify-between items-center shadow-sm"
+                        >
+                          <span className={selectedSku ? '' : 'text-slate-400 font-medium'}>
+                            {selectedSku 
+                              ? items.find(i => i.sku === selectedSku) ? `${selectedSku} - ${items.find(i => i.sku === selectedSku)?.name}` : selectedSku
+                              : 'Qidirish yoki tanlash...'}
+                          </span>
+                          <ChevronDown size={20} className={`text-slate-400 transition-transform ${isSkuDropdownOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        
+                        {isSkuDropdownOpen && (
+                          <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden z-[110] py-1 animate-in slide-in-from-top-2 duration-200">
+                            <ul className="max-h-[250px] overflow-y-auto custom-scrollbar">
+                              <li
+                                onClick={() => { setSelectedSku(''); setExistingSkuSearch(''); setIsSkuDropdownOpen(false); }}
+                                className="px-4 py-3 hover:bg-slate-50 cursor-pointer text-sm font-medium text-slate-500 border-b border-slate-50"
+                              >
+                                Tanlovni tozalash
+                              </li>
+                              {items.map(item => (
+                                <li
+                                  key={item.id}
+                                  onClick={() => { 
+                                    setSelectedSku(item.sku); 
+                                    setExistingSkuSearch(item.sku);
+                                    setIsSkuDropdownOpen(false); 
+                                  }}
+                                  className={`px-4 py-3 hover:bg-slate-50 cursor-pointer text-sm font-bold border-b border-slate-50 transition-colors ${selectedSku === item.sku ? 'bg-sidebarDark/5 text-sidebarDark border-l-4 border-l-sidebarDark pl-3' : 'text-slate-700'}`}
+                                >
+                                  <div className="flex flex-col">
+                                    <span>{item.name}</span>
+                                    <span className="text-[10px] font-mono text-slate-400">{item.sku}</span>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -950,54 +1025,57 @@ const Inventory = () => {
                   const otherStores = items.filter(i => i.sku === selectedSku && i.store_id !== activeStore && i.inStock > 0);
 
                   return (
-                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/60 mb-3 flex flex-col gap-3">
-                      
-                      {/* Boshqa omborlarda mavjud qoldiqlar */}
-                      {otherStores.length > 0 && (
-                        <div className="border-b border-slate-200/60 pb-3 mb-1">
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 block ml-1">Qaysi do'konlarda mavjud?</span>
-                          <div className="flex flex-col gap-2">
-                            {otherStores.map((storeRec, idx) => (
-                              <div key={idx} className="flex justify-between items-center bg-white px-3 py-2.5 rounded-xl border border-slate-200/60 shadow-sm">
-                                <span className="text-sm font-bold text-slate-600 flex items-center gap-2">
-                                  <div className="p-1 rounded-md bg-slate-50"><Box size={14} className="text-slate-400"/></div>
-                                  {storeRec.storeName}
-                                </span>
-                                <span className="text-sm font-black text-blue-700 bg-blue-50/50 px-2.5 py-1 rounded-lg">
-                                  {storeRec.inStock} <span className="text-[10px] font-bold uppercase">{storeRec.unit}</span>
-                                </span>
-                              </div>
-                            ))}
+                    <div className="bg-slate-50 p-5 rounded-3xl border border-slate-200/60 mb-4 flex flex-col gap-4 shadow-inner">
+                      {/* Mahsulot nomi va SKU */}
+                      <div className="flex items-start gap-4 border-b border-slate-200/60 pb-4">
+                        <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center text-sidebarDark border border-slate-100 shrink-0">
+                          <Package size={24} />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="text-lg font-black text-slate-900 leading-tight">{displayItem.name}</h3>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{displayItem.sku}</span>
+                            <span className="text-[10px] font-bold text-blue-500 px-2 py-0.5 bg-blue-50 rounded-lg">{displayItem.category}</span>
                           </div>
                         </div>
-                      )}
-
-                      {/* Joriy xodimning filiali va uning qoldig'i */}
-                      <div className="flex justify-between items-center bg-blue-50 p-3 rounded-xl border border-blue-100/60">
-                        <div className="flex flex-col">
-                          <span className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1.5 ml-1">
-                            Sizning o'zgarishingiz:
+                        <div className="flex flex-col items-end shrink-0">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Narxi</span>
+                          <span className="text-sm font-black text-sidebarDark bg-white px-3 py-1.5 rounded-xl border border-slate-200/60 shadow-sm">
+                            {displayItem.price.toLocaleString('uz-UZ')} <span className="text-[10px] font-bold">uzs</span>
                           </span>
-                          <span className="text-sm font-bold text-slate-700 ml-1">
-                            {activeStoreName} ({activeStore === 'ALL' ? 'Admin' : user?.fullName || 'Xodim'})
-                          </span>
-                          {item && (
-                            <span className="text-[10px] font-bold text-slate-400 ml-1 mt-1">
-                              Oxirgi yangilanuv: {new Date(item.lastUpdated).toLocaleString('uz-UZ').replace(',', '')}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end">
-                           {!item ? (
-                             <span className="text-[11px] font-black text-green-600 bg-green-100/50 px-2.5 py-1.5 rounded-lg border border-green-200">MAHSULOT KIRITISH (YANGI)</span>
-                           ) : (
-                             <div className="flex items-baseline gap-1 bg-white px-3 py-1.5 rounded-xl border border-blue-100 shadow-sm">
-                               <span className="text-xl font-black text-sidebarDark">{item.inStock}</span>
-                               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{displayItem.unit}</span>
-                             </div>
-                           )}
                         </div>
                       </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                         {/* Existing Store Stock */}
+                         <div className={`p-3.5 rounded-2xl border shadow-sm transition-all ${item && item.inStock > 0 ? 'bg-white border-slate-200/60' : 'bg-red-50 border-red-100'}`}>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Ombordagi qoldiq</span>
+                            <div className="flex items-baseline gap-1">
+                               <span className={`text-2xl font-black ${item && item.inStock > 0 ? 'text-sidebarDark' : 'text-red-500'}`}>{item ? item.inStock : 0}</span>
+                               <span className="text-[11px] font-bold text-slate-500 uppercase">{displayItem.unit}</span>
+                            </div>
+                         </div>
+                         {/* Current Store */}
+                         <div className="bg-white p-3.5 rounded-2xl border border-slate-200/60 shadow-sm">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Sizning filial</span>
+                            <p className="text-[11px] font-bold text-slate-700 leading-tight" title={activeStoreName}>{activeStoreName}</p>
+                         </div>
+                      </div>
+
+                      {/* Boshqa omborlarda mavjud qoldiqlar (agar bo'lsa) */}
+                      {otherStores.length > 0 && (
+                        <div className="pt-2">
+                           <button 
+                             type="button"
+                             className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-1.5 hover:text-blue-700 transition-colors"
+                             onClick={() => {
+                               // Optional: could expand here, but for now just showing it exists
+                             }}
+                           >
+                             Boshqa filiallarda ham mavjud (+{otherStores.length})
+                           </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -1179,9 +1257,6 @@ const Inventory = () => {
                             {storeRecord.inStock} {storeRecord.unit}
                           </span>
                         </div>
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 ml-5 font-semibold">
-                          <span>Qo'shgan:</span> <span className="text-slate-700">{storeRecord.creatorName}</span>
-                        </div>
                       </div>
                     ))
                   ) : (
@@ -1189,12 +1264,15 @@ const Inventory = () => {
                   )}
                 </div>
               </div>
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1 mb-1.5">Kim qo'shgan (Xodim)?</p>
-                <div className="font-bold text-slate-700 bg-slate-50 p-3.5 rounded-2xl border border-slate-100 flex items-center gap-2">
-                   {infoModalData.creatorName}
-                </div>
-              </div>
+            </div>
+
+            <div className="mt-8">
+              <button 
+                onClick={() => setInfoModalData(null)}
+                className="w-full py-4 rounded-2xl font-bold text-white bg-sidebarDark hover:bg-slate-800 transition-all shadow-xl shadow-slate-900/20 active:scale-[0.98]"
+              >
+                Tushunarli
+              </button>
             </div>
           </div>
         </div>

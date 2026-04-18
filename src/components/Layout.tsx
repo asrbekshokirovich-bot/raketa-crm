@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Navbar from './Navbar';
+import NotificationHistory from './NotificationHistory';
 
 const Layout = () => {
   return (
@@ -12,6 +13,7 @@ const Layout = () => {
           <Outlet />
         </main>
       </div>
+      <NotificationHistory />
     </div>
   );
 };
