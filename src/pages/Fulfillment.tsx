@@ -11,8 +11,7 @@ import {
   ShoppingBag,
   ArrowRight,
   X,
-  Smartphone,
-  Tag
+  Smartphone
 } from 'lucide-react';
 
 const parsePrice = (priceStr: string | number | undefined | null) => {
@@ -40,7 +39,10 @@ interface FulfillmentOrder {
   discount_amount: number;
   promo_code: string | null;
   items_subtotal: number;
+  coordinates: string;
   delivery_fee: number;
+  promo_type?: string;
+  promo_value?: number;
 }
 
 const formatDate = (dateStr: string) => {
@@ -89,11 +91,12 @@ const Fulfillment = () => {
     fetchOrders();
 
     const channel = supabase
-      .channel('orders-channel')
+      .channel('fulfillment_realtime_channel')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'orders' },
         (payload) => {
+          console.log('CRM REALTIME INSERT:', payload);
           const newOrder = payload.new as any;
           setRecentlyAdded(prev => new Set(prev).add(newOrder.id));
           setTimeout(() => {
@@ -109,7 +112,8 @@ const Fulfillment = () => {
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'orders' },
-        () => {
+        (payload) => {
+          console.log('CRM REALTIME UPDATE:', payload);
           fetchOrders();
         }
       )
@@ -117,17 +121,29 @@ const Fulfillment = () => {
         'postgres_changes',
         { event: 'DELETE', schema: 'public', table: 'orders' },
         () => {
+          console.log('CRM REALTIME DELETE');
           fetchOrders();
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('Fulfillment Realtime status:', status);
+      });
+
+    const handleGlobalUpdate = () => {
+      console.log('Fulfillment: Received orders-updated event');
+      fetchOrders();
+    };
+
+    window.addEventListener('orders-updated', handleGlobalUpdate);
 
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('orders-updated', handleGlobalUpdate);
     };
   }, []);
 
   const fetchOrders = async () => {
+    console.log('Fetching orders...');
     const { data, error } = await supabase
       .from('orders')
       .select('*')
@@ -146,8 +162,11 @@ const Fulfillment = () => {
         createdAt: o.created_at,
         discount_amount: o.discount_amount || 0,
         promo_code: o.promo_code || null,
-        items_subtotal: o.items_subtotal || parsePrice(o.total_amount),
-        delivery_fee: o.delivery_fee || 0
+        items_subtotal: parsePrice(o.total_amount) - (o.delivery_fee || 0) + (o.discount_amount || 0),
+        delivery_fee: o.delivery_fee || 0,
+        coordinates: o.coordinates || '',
+        promo_type: o.promo_type,
+        promo_value: o.promo_value
       }));
       setOrders(formatted as FulfillmentOrder[]);
     }
@@ -363,148 +382,148 @@ const Fulfillment = () => {
               </div>
 
               <div className="flex-1 flex overflow-hidden">
-                {/* Left Side: Order Info (The Red Box side) */}
-                <div className="w-1/3 border-r border-slate-100 bg-white overflow-y-auto p-8 flex flex-col gap-8">
-                  {/* Customer Info */}
-                  <div className="space-y-4">
-                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                       <User size={14} /> Mijoz Ma'lumotlari
-                    </h3>
-                    <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
-                      <p className="text-base font-black text-slate-800">{selectedOrder.customerName}</p>
-                      <p className="text-sm font-bold text-slate-500 flex items-center gap-2">
-                        <Smartphone size={14} className="text-slate-400" />
-                        {selectedOrder.customer_phone || "---"}
-                      </p>
+                {/* Left Side: Receipt Style (The "Check" column) */}
+                <div className="w-1/3 border-r border-slate-100 bg-white overflow-y-auto p-6 flex flex-col gap-4 font-mono text-[13px]">
+                  <div className="text-center pb-4 border-b border-dashed border-slate-200">
+                    <h3 className="font-black text-slate-800 text-sm">RAKETA MARKET</h3>
+                    <p className="text-[10px] text-slate-400">Buyurtma Kvitansiyasi</p>
+                  </div>
+
+                  {/* Header Info */}
+                  <div className="space-y-1 text-slate-600">
+                    <div className="flex justify-between">
+                      <span className="font-bold">Buyurtma sanasi:</span>
+                      <span>{formatDate(selectedOrder.createdAt)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-bold">Buyurtma ID:</span>
+                      <span>{selectedOrder.orderNumber}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-bold">Mijoz:</span>
+                      <span className="font-black text-slate-800">{selectedOrder.customerName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="font-bold">Telefon raqam:</span>
+                      <span>{selectedOrder.customer_phone || "---"}</span>
+                    </div>
+                    <div className="flex flex-col mt-2">
+                      <span className="font-bold">Manzil:</span>
+                      <span className="italic bg-slate-50 p-2 rounded mt-1">{selectedOrder.address}</span>
+                    </div>
+                    <div className="flex justify-between mt-1">
+                      <span className="font-bold">Kordinata:</span>
+                      <span>{selectedOrder.coordinates || "---"}</span>
                     </div>
                   </div>
 
-                  {/* Order Stats */}
+                  <div className="py-2 text-center text-slate-300">
+                    ---------------------------------
+                  </div>
+
+                  {/* Products Section */}
                   <div className="space-y-4">
-                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                       <Package size={14} /> Buyurtma Statistikasi
-                    </h3>
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1 p-4 rounded-2xl bg-blue-50/50 border border-blue-100 text-center">
-                        <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest mb-1">Jami Tovar</p>
-                        <p className="text-xl font-black text-blue-600">{selectedOrder.itemsCount}</p>
+                    <h4 className="font-black text-slate-800 uppercase text-center border-b border-slate-50 pb-2">Maxsulotlar</h4>
+                    {isLoadingItems ? (
+                      <div className="py-4 text-center text-slate-400">Yuklanmoqda...</div>
+                    ) : orderItems.length > 0 ? (
+                      <div className="space-y-4">
+                        {orderItems.map((item, idx) => (
+                          <div key={item.id} className="space-y-1">
+                            <div className="flex justify-between gap-4">
+                              <span className="font-bold text-slate-700">{idx + 1}. {item.products?.name}</span>
+                              <span className="font-black text-slate-900 shrink-0">x {item.quantity}</span>
+                            </div>
+                            <div className="flex justify-between text-[11px] text-slate-500 pl-4">
+                              <span>{new Intl.NumberFormat('uz-UZ').format(item.price_at_time)} sum x {item.quantity}</span>
+                              <span className="font-bold">= {new Intl.NumberFormat('uz-UZ').format(item.price_at_time * item.quantity)} sum</span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <div className="flex-1 p-4 rounded-2xl bg-slate-50 border border-slate-100 text-center">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Vaqti</p>
-                        <p className="text-sm font-black text-slate-600">{formatDate(selectedOrder.createdAt).split(',')[1]}</p>
+                    ) : (
+                      <div className="py-4 text-center text-slate-400">Mahsulotlar topilmadi</div>
+                    )}
+                  </div>
+
+                  <div className="py-2 text-center text-slate-300">
+                    ---------------------------------
+                  </div>
+
+                  {/* Summary Section */}
+                  <div className="space-y-2 text-slate-700">
+                    <div className="flex justify-between">
+                      <span>Maxsulotlar jami:</span>
+                      <span className="font-bold">{new Intl.NumberFormat('uz-UZ').format(selectedOrder.items_subtotal)} sum</span>
+                    </div>
+                    
+                    <div className="flex justify-between text-blue-600">
+                      <span>Dastavka narxi:</span>
+                      <span className="font-bold">+{new Intl.NumberFormat('uz-UZ').format(selectedOrder.delivery_fee)} sum</span>
+                    </div>
+
+                    <div className="flex justify-between">
+                      <span>Promo kod:</span>
+                      <span className={selectedOrder.promo_code ? "text-green-600 font-bold" : "text-slate-400"}>
+                        {selectedOrder.promo_code ? `foydalanilgan (${selectedOrder.promo_code})` : "foydalanilmagan"}
+                      </span>
+                    </div>
+                    {selectedOrder.promo_code && (
+                      <div className="flex justify-between text-green-600 pl-4 text-[11px]">
+                        <span>
+                          {selectedOrder.promo_type === 'percent' 
+                            ? `(${selectedOrder.promo_value}% chegirma)` 
+                            : `(${new Intl.NumberFormat('uz-UZ').format(selectedOrder.promo_value || 0)} sum chegirma)`}
+                        </span>
+                        <span className="font-bold">-{new Intl.NumberFormat('uz-UZ').format(selectedOrder.discount_amount)} sum</span>
                       </div>
+                    )}
+
+                    <div className="pt-3 border-t border-slate-100 flex justify-between items-center text-base">
+                      <span className="font-black text-slate-900">To'lanadi:</span>
+                      <span className="font-black text-slate-900 bg-yellow-50 px-2 py-1 rounded">
+                        {new Intl.NumberFormat('uz-UZ').format(parsePrice(selectedOrder.totalAmount))} sum
+                      </span>
+                    </div>
+                    <div className="flex justify-between pt-2">
+                       <span>To'lov usuli:</span>
+                       <span className="font-bold">naqd / online</span>
                     </div>
                   </div>
 
-                  {/* Address */}
-                  <div className="space-y-4">
-                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                       <MapPin size={14} /> To'liq Manzil
-                    </h3>
-                    <div className="p-5 rounded-2xl bg-slate-50 border border-slate-100 text-sm font-bold text-slate-600 leading-relaxed italic">
-                      {selectedOrder.address}
-                    </div>
-                  </div>
-
-                  {/* Detailed Calculation */}
-                  <div className="mt-auto space-y-4 pt-6 border-t border-slate-50">
-                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Hisob-kitob</h3>
-                    <div className="space-y-3">
-                      <div className="flex justify-between text-sm font-bold text-slate-500">
-                        <span>Asli narxi:</span>
-                        <span>{new Intl.NumberFormat('uz-UZ').format(selectedOrder.items_subtotal)} UZS</span>
-                      </div>
-                      
-                      {selectedOrder.promo_code && (
-                        <div className="flex justify-between text-sm font-bold text-green-500">
-                          <span className="flex items-center gap-1.5"><Tag size={13} /> Promo ({selectedOrder.promo_code}):</span>
-                          <span>-{new Intl.NumberFormat('uz-UZ').format(selectedOrder.discount_amount)} UZS</span>
-                        </div>
-                      )}
-
-                      <div className="flex justify-between text-sm font-bold text-blue-500">
-                        <span>Dastavka:</span>
-                        <span>+{new Intl.NumberFormat('uz-UZ').format(selectedOrder.delivery_fee)} UZS</span>
-                      </div>
-
-                      <div className="pt-4 mt-2 border-t border-slate-100 flex justify-between items-end">
-                        <div>
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Yakuniy To'lov</p>
-                          <p className="text-2xl font-black text-slate-900 leading-tight">
-                            {new Intl.NumberFormat('uz-UZ').format(parsePrice(selectedOrder.totalAmount))} <span className="text-sm text-slate-400">UZS</span>
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                  <div className="mt-8 pb-4">
+                    <button 
+                      onClick={() => alert('Check chop etish tizimi ulanmoqda...')}
+                      className="w-full py-4 bg-sidebarDark text-white rounded-2xl font-black text-sm hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3 shadow-xl shadow-sidebarDark/10"
+                    >
+                      <Printer size={20} />
+                      <span>CHEK CHIQARISH</span>
+                    </button>
                   </div>
                 </div>
 
-                {/* Right Side: Items List */}
+                {/* Right Side: Visual representation if needed or just empty/status */}
                 <div className="flex-1 bg-slate-50/50 flex flex-col overflow-hidden">
-                  <div className="p-8 pb-4 shrink-0">
-                    <h3 className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                       <ShoppingBag size={14} /> Buyurtma Tarkibi
-                    </h3>
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto p-8 pt-0 custom-scrollbar">
-                    <div className="space-y-3">
-                      {isLoadingItems ? (
-                        <div className="py-20 flex flex-col items-center justify-center gap-3 text-slate-300">
-                          <div className="w-10 h-10 border-4 border-slate-100 border-t-sidebarDark rounded-full animate-spin" />
-                          <span className="text-xs font-black uppercase tracking-widest">Yuklanmoqda...</span>
-                        </div>
-                      ) : orderItems.length > 0 ? (
-                        orderItems.map((item) => (
-                          <div key={item.id} className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-slate-100 hover:border-slate-200 transition-all shadow-sm">
-                            <div className="w-16 h-16 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center overflow-hidden shrink-0">
-                              {item.products?.image_url ? (
-                                <span className="text-3xl">{item.products.image_url}</span>
-                              ) : (
-                                <Package size={24} className="text-slate-300" />
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-base font-black text-slate-800 truncate">{item.products?.name || 'Noma\'lum mahsulot'}</p>
-                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">SKU: {item.products?.sku || '---'}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm font-black text-slate-900 bg-slate-50 px-3 py-1 rounded-lg">
-                                {item.quantity} dona
-                              </p>
-                              <p className="text-xs font-bold text-slate-400 mt-1">
-                                {new Intl.NumberFormat('uz-UZ').format(item.price_at_time)} UZS
-                              </p>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="py-20 text-center bg-white rounded-3xl border border-dashed border-slate-200 mx-auto">
-                          <Package size={48} className="mx-auto text-slate-100 mb-4" />
-                          <p className="text-sm font-black text-slate-300 uppercase tracking-widest">Mahsulotlar topilmadi</p>
-                        </div>
+                  <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-6">
+                    <div className="w-32 h-32 rounded-full bg-white shadow-2xl flex items-center justify-center text-sidebarDark">
+                      <ShoppingBag size={64} />
+                    </div>
+                    <div className="space-y-2">
+                       <h2 className="text-2xl font-black text-slate-800">Buyurtma Holati</h2>
+                       <p className="text-slate-500 max-w-md">Buyurtma hozirda <b>{selectedOrder.status}</b> holatida. Chap tomondagi kvitansiya orqali barcha ma'lumotlarni tekshiring.</p>
+                    </div>
+                    
+                    <div className="flex gap-4">
+                      {activeTab === 'Pending' && (
+                        <button 
+                          onClick={() => handleUpdateStatus(selectedOrder.id, 'Pending')}
+                          className="px-8 py-4 bg-green-600 text-white rounded-2xl font-black text-sm hover:shadow-lg hover:shadow-green-600/20 active:scale-95 transition-all flex items-center gap-3"
+                        >
+                          <span>QABUL QILIB TAYYORLASH</span>
+                          <ArrowRight size={20} />
+                        </button>
                       )}
                     </div>
-                  </div>
-
-                  {/* Modal Action Footer */}
-                  <div className="p-8 bg-white border-t border-slate-100 flex justify-between items-center shrink-0">
-                    <button 
-                      onClick={() => alert('Check chop etish tizimi ulanmoqda...')}
-                      className="px-8 py-4 bg-sidebarDark text-white rounded-2xl font-black text-sm hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-3 shadow-xl shadow-sidebarDark/10"
-                    >
-                      <Printer size={20} />
-                      <span>CHECK CHIQARISH</span>
-                    </button>
-                    {activeTab === 'Pending' && (
-                       <button 
-                       onClick={() => handleUpdateStatus(selectedOrder.id, 'Pending')}
-                       className="px-8 py-4 bg-green-600 text-white rounded-2xl font-black text-sm hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-3 shadow-xl shadow-green-600/10"
-                     >
-                       <span>QABUL QILIB TAYYORLASH</span>
-                       <ArrowRight size={20} />
-                     </button>
-                    )}
                   </div>
                 </div>
               </div>

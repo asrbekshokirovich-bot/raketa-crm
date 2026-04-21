@@ -33,7 +33,7 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
       fetchNotifications();
 
       const channel = supabase
-        .channel('orders_realtime')
+        .channel('global_notifications')
         .on(
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'orders' },
@@ -52,10 +52,14 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
             setNotifications(prev => [notification, ...prev]);
             setUnreadCount(prev => prev + 1);
             playNotificationSound();
+
+            // Dispatch custom event to notify other components (like Fulfillment)
+            console.log('Dispatching orders-updated event...');
+            window.dispatchEvent(new CustomEvent('orders-updated', { detail: payload }));
           }
         )
         .subscribe((status) => {
-          console.log('Realtime subscription status:', status);
+          console.log('Notification Realtime status:', status);
         });
 
       return () => {
@@ -126,9 +130,9 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     try {
       const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
       audio.volume = 0.5;
-      audio.play().catch(e => console.log('Sound play blocked by browser'));
-    } catch (e) {
-      console.log('Audio error:', e);
+      audio.play().catch(_e => console.log('Sound play blocked by browser'));
+    } catch (_e) {
+      console.log('Audio error:', _e);
     }
   };
 
