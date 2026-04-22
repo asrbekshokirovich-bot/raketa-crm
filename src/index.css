@@ -55,3 +55,15 @@ input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+/* Number Ticker Animations */
+@keyframes num-down {
+  0% { transform: translateY(-100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes num-up {
+  0% { transform: translateY(100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.animate-num-down { animation: num-down 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.animate-num-up { animation: num-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }

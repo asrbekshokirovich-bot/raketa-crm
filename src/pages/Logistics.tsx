@@ -18,7 +18,7 @@ interface DeliveryOrder {
   orderNumber: string;
   customerName: string;
   courierName?: string;
-  status: 'Waiting' | 'OnTheWay' | 'Delivered' | 'Returned';
+  status: 'Waiting' | 'OnTheWay' | 'Delivered' | 'Returned' | 'Cancelled';
   address: string;
   time: string;
   amount: string;
@@ -183,7 +183,7 @@ const Logistics = () => {
             {deliveries.filter(d => 
               (activeTab === 'Waiting' && d.status === 'Waiting') ||
               (activeTab === 'InTransit' && d.status === 'OnTheWay') ||
-              (activeTab === 'Finished' && (d.status === 'Delivered' || d.status === 'Returned'))
+              (activeTab === 'Finished' && (d.status === 'Delivered' || d.status === 'Returned' || d.status === 'Cancelled'))
             ).map((delivery) => (
               <tr key={delivery.id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-6 py-4">
@@ -198,8 +198,13 @@ const Logistics = () => {
                       <User size={12} className="text-slate-400" /> {delivery.customerName}
                     </p>
                     <p className="text-[11px] text-slate-500 flex items-center gap-1 truncate">
-                      <MapPin size={10} className="text-slate-400" /> {delivery.address}
+                      <MapPin size={10} className="text-slate-400" /> {delivery.address.split('\n')[0]}
                     </p>
+                    {delivery.address.split('\n')[1] && (
+                      <p className="text-[10px] text-indigo-600 font-bold bg-indigo-50 px-2 py-0.5 rounded mt-1 inline-block border border-indigo-100/50">
+                        Izoh: {delivery.address.split('\n')[1]}
+                      </p>
+                    )}
                   </div>
                 </td>
                 <td className="px-6 py-4">
@@ -229,7 +234,8 @@ const Logistics = () => {
                      <AlertTriangle size={10} />}
                     {delivery.status === 'Waiting' ? 'Tayyor' : 
                      delivery.status === 'OnTheWay' ? 'Yo\'lda' :
-                     delivery.status === 'Delivered' ? 'Yetkazildi' : 'Qaytdi'}
+                     delivery.status === 'Delivered' ? 'Yetkazildi' : 
+                     delivery.status === 'Cancelled' ? 'Bekor qilindi' : 'Qaytdi'}
                   </span>
                 </td>
                 <td className="px-6 py-4">

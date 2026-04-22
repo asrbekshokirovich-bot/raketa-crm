@@ -24,12 +24,23 @@ const ProtectedRoute = ({ children, requireOwner = false }: { children: React.Re
   return children;
 };
 
+const Home = () => {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  
+  if (user.role === 'Omborchi') return <Navigate to="/inventory" replace />;
+  if (user.role === 'Sotuvchi') return <Navigate to="/orders" replace />;
+  if (user.role === 'Manager') return <Navigate to="/stores" replace />;
+  
+  return <Dashboard />;
+};
+
 const router = createBrowserRouter([
   {
     path: "/",
     element: <ProtectedRoute><Layout /></ProtectedRoute>,
     children: [
-      { index: true, element: <Dashboard /> },
+      { index: true, element: <Home /> },
       { path: "inventory", element: <Inventory /> },
       { path: "fulfillment", element: <Fulfillment /> },
       { path: "orders", element: <ProductListings /> },

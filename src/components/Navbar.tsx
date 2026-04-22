@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Bell, Loader2, Store, History, Clock } from 'lucide-react';
+import { Search, Bell, Loader2, Store, History, Clock, ChevronDown, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { supabase } from '../services/supabase';
@@ -15,6 +15,7 @@ const Navbar = () => {
   const [isFetching, setIsFetching] = useState(false);
   const [stores, setStores] = useState<StoreItem[]>([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isStoreOpen, setIsStoreOpen] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -78,22 +79,66 @@ const Navbar = () => {
           />
         </div>
 
-        {/* Store Indicator */}
+        {/* Custom Store Selector - Professional Design */}
         {(user?.role === 'Owner' || user?.role === 'Admin') ? (
-          <div className="flex items-center gap-2 bg-yellow-50 px-3 py-2 rounded-xl border border-yellow-100/50 transition-all duration-300">
-            {isFetching ? <Loader2 size={18} className="text-yellow-600 animate-spin" /> : <Store size={18} className="text-yellow-600" />}
-            <select 
-              value={activeStore}
-              onFocus={() => fetchStores()}
-              onChange={(e) => setActiveStore(e.target.value)}
-              className="bg-transparent text-sm font-semibold text-slate-700 outline-none cursor-pointer pr-2"
-              title="Aktiv filialni tanlang"
+          <div className="relative">
+            <button 
+              onClick={() => {
+                fetchStores();
+                setIsStoreOpen(!isStoreOpen);
+              }}
+              className={`flex items-center gap-2.5 px-4 py-2 rounded-xl border transition-all duration-200 ${
+                isStoreOpen 
+                  ? 'bg-slate-50 border-slate-300 ring-4 ring-slate-100' 
+                  : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+              }`}
             >
-              <option value="ALL">Barcha Filiallar (Global)</option>
-              {stores.map(store => (
-                <option key={store.id} value={store.id}>{store.name}</option>
-              ))}
-            </select>
+              {isFetching ? <Loader2 size={16} className="text-slate-400 animate-spin" /> : <Store size={16} className="text-slate-500" />}
+              <span className="text-xs font-bold text-slate-700 min-w-[110px] text-left">
+                {activeStore === 'ALL' ? 'Filial tanlash' : stores.find(s => s.id === activeStore)?.name || 'Filial tanlash'}
+              </span>
+              <ChevronDown size={14} className={`text-slate-400 transition-transform duration-300 ${isStoreOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isStoreOpen && (
+              <>
+                <div className="fixed inset-0 z-[60]" onClick={() => setIsStoreOpen(false)} />
+                <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.12)] border border-slate-200 overflow-hidden z-[70] animate-in fade-in zoom-in-95 duration-200">
+                  <div className="p-2">
+                    <div className="px-3 py-2 flex items-center justify-between">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Filiallar</p>
+                      <span className="text-[9px] font-bold text-slate-300">ID: {user?.id.slice(0, 8)}</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setActiveStore('ALL');
+                        setIsStoreOpen(false);
+                      }}
+                      className={`w-full text-left px-4 py-2.5 rounded-lg text-[11px] font-bold mb-0.5 transition-all flex items-center justify-between group ${activeStore === 'ALL' ? 'bg-blue-50 text-blue-600' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                    >
+                      Barcha filiallar (Global)
+                      {activeStore === 'ALL' && <Check size={12} className="text-blue-500" />}
+                    </button>
+                    <div className="h-px bg-slate-100 my-2 mx-1" />
+                    <div className="max-h-[280px] overflow-y-auto custom-scrollbar">
+                      {stores.map(store => (
+                        <button
+                          key={store.id}
+                          onClick={() => {
+                            setActiveStore(store.id);
+                            setIsStoreOpen(false);
+                          }}
+                          className={`w-full text-left px-4 py-2.5 rounded-lg text-[11px] font-bold mb-0.5 transition-all flex items-center justify-between group ${activeStore === store.id ? 'bg-blue-50 text-blue-600' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}
+                        >
+                          {store.name}
+                          {activeStore === store.id && <Check size={12} className="text-blue-500" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">

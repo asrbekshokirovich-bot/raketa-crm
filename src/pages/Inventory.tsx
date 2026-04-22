@@ -138,6 +138,22 @@ const Inventory = () => {
 
   useEffect(() => {
     fetchInventory();
+
+    // Enable Real-time for automated stock updates
+    const channel = supabase
+      .channel('inventory_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'products' },
+        () => {
+          fetchInventory();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const processSkuSelection = (scannedCode: string) => {
@@ -488,14 +504,24 @@ const Inventory = () => {
           <h1 className="text-2xl font-bold text-slate-900">Omborxona (Inventory)</h1>
           <p className="text-slate-500 text-sm mt-1">Tovar qoldiqlari, SKU va ombor zaxirasini real vaqtda boshqarish</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-col items-end gap-2">
           <button 
+            disabled={activeStore === 'ALL'}
             onClick={handleOpenModal}
-            className="bg-sidebarDark hover:bg-slate-800 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg shadow-slate-900/10"
+            className={`px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg ${
+              activeStore === 'ALL' 
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none border border-slate-100' 
+                : 'bg-sidebarDark hover:bg-slate-800 text-white shadow-slate-900/10'
+            }`}
           >
             <Plus size={18} />
             <span>Yangi Tovar Qabul Qilish</span>
           </button>
+          {activeStore === 'ALL' && (
+            <p className="text-[10px] font-black text-brandRed uppercase tracking-widest animate-pulse">
+              Filial tanlang!
+            </p>
+          )}
         </div>
       </div>
 
@@ -1049,16 +1075,29 @@ const Inventory = () => {
                       <div className="grid grid-cols-2 gap-3">
                          {/* Existing Store Stock */}
                          <div className={`p-3.5 rounded-2xl border shadow-sm transition-all ${item && item.inStock > 0 ? 'bg-white border-slate-200/60' : 'bg-red-50 border-red-100'}`}>
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Ombordagi qoldiq</span>
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Filialdagi qoldiq</span>
                             <div className="flex items-baseline gap-1">
                                <span className={`text-2xl font-black ${item && item.inStock > 0 ? 'text-sidebarDark' : 'text-red-500'}`}>{item ? item.inStock : 0}</span>
                                <span className="text-[11px] font-bold text-slate-500 uppercase">{displayItem.unit}</span>
                             </div>
                          </div>
-                         {/* Current Store */}
+                         {/* Global Stock Summary */}
                          <div className="bg-white p-3.5 rounded-2xl border border-slate-200/60 shadow-sm">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Sizning filial</span>
-                            <p className="text-[11px] font-bold text-slate-700 leading-tight" title={activeStoreName}>{activeStoreName}</p>
+                            <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest block mb-1.5">Umumiy (Barcha filial)</span>
+                            <div className="flex items-baseline gap-1">
+                               <span className="text-2xl font-black text-slate-900">
+                                 {items.filter(i => i.sku === selectedSku).reduce((sum, i) => sum + i.inStock, 0)}
+                               </span>
+                               <span className="text-[11px] font-bold text-slate-500 uppercase">{displayItem.unit}</span>
+                            </div>
+                         </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-3">
+                         {/* Current Store */}
+                         <div className="bg-slate-100/50 p-3.5 rounded-2xl border border-dashed border-slate-300 shadow-sm">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-1.5">Hozirgi qabul qilinayotgan filial:</span>
+                            <p className="text-xs font-black text-sidebarDark" title={activeStoreName}>{activeStoreName}</p>
                          </div>
                       </div>
 
