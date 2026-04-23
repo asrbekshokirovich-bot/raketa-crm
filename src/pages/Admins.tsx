@@ -27,7 +27,7 @@ const Admins = () => {
   const [loading, setLoading] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [newAdmin, setNewAdmin] = useState({ fullName: '', username: '', password: '', role: 'Manager', storeId: '', phone: '' });
+  const [newAdmin, setNewAdmin] = useState({ fullName: '', username: '', password: '', role: '', storeId: '', phone: '' });
   const [submitError, setSubmitError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPass, setShowPass] = useState(false);
@@ -113,7 +113,7 @@ const Admins = () => {
           if (storeSyncError) console.error("Store sync error:", storeSyncError.message);
         }
       setIsModalOpen(false);
-      setNewAdmin({ fullName: '', username: '', password: '', role: 'Manager', storeId: '', phone: '' });
+      setNewAdmin({ fullName: '', username: '', password: '', role: '', storeId: '', phone: '' });
       fetchAdminsOnly();
 
     } catch (err: any) {
@@ -268,7 +268,7 @@ const Admins = () => {
           <button 
             onClick={() => {
               setSubmitError('');
-              setNewAdmin({ fullName: '', username: '', password: '', role: 'Manager', storeId: '', phone: '' });
+              setNewAdmin({ fullName: '', username: '', password: '', role: '', storeId: '', phone: '' });
               setIsModalOpen(true);
             }}
             className="whitespace-nowrap bg-yellow-500 hover:bg-yellow-600 text-white px-6 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-all shadow-lg shadow-yellow-500/20"
@@ -322,26 +322,28 @@ const Admins = () => {
                       >
                         <Eye size={18} />
                       </button>
-                      <button 
-                        onClick={() => {
-                          setSubmitError('');
-                          setEditingAdmin({ 
-                            id: admin.id, 
-                            fullName: admin.full_name, 
-                            username: admin.email.split('@')[0],
-                            role: admin.role, 
-                            storeId: admin.store_id || '',
-                            password: '',
-                            lastPass: admin.password_hint || '',
-                            phone: admin.phone || ''
-                          });
-                          setIsEditModalOpen(true);
-                        }}
-                        title="Tahrirlash"
-                        className="p-2 text-gray-400 hover:text-blue-500 transition-colors bg-gray-50 hover:bg-blue-50 rounded-lg"
-                      >
-                        <Edit2 size={18} />
-                      </button>
+                      {!(user?.role === 'Admin' && admin.role === 'Owner') && (
+                        <button 
+                          onClick={() => {
+                            setSubmitError('');
+                            setEditingAdmin({ 
+                              id: admin.id, 
+                              fullName: admin.full_name, 
+                              username: admin.email.split('@')[0],
+                              role: admin.role, 
+                              storeId: admin.store_id || '',
+                              password: '',
+                              lastPass: admin.password_hint || '',
+                              phone: admin.phone || ''
+                            });
+                            setIsEditModalOpen(true);
+                          }}
+                          title="Tahrirlash"
+                          className="p-2 text-gray-400 hover:text-blue-500 transition-colors bg-gray-50 hover:bg-blue-50 rounded-lg"
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                      )}
                       {admin.role !== 'Owner' && (
                         <button 
                           onClick={() => handleDelete(admin)}
@@ -382,28 +384,30 @@ const Admins = () => {
                 </div>
               )}
               
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Qaysi filialda ishlaydi?</label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                    <Store size={18} className="text-gray-400" />
+              {newAdmin.role !== 'Admin' && newAdmin.role !== 'Owner' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Qaysi filialda ishlaydi?</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                      <Store size={18} className="text-gray-400" />
+                    </div>
+                    <select 
+                      required 
+                      title="Filialni tanlang" 
+                      value={newAdmin.storeId} 
+                      onChange={e => setNewAdmin({...newAdmin, storeId: e.target.value})} 
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none bg-white font-medium text-slate-700 appearance-none"
+                    >
+                      <option value="" disabled>Filial (do'kon) ni tanlang</option>
+                      {stores
+                        .filter(store => newAdmin.role !== 'Manager' || !admins.some(a => a.role === 'Manager' && a.store_id === store.id))
+                        .map(store => (
+                        <option key={store.id} value={store.id}>{store.name}</option>
+                      ))}
+                    </select>
                   </div>
-                  <select 
-                    required 
-                    title="Filialni tanlang" 
-                    value={newAdmin.storeId} 
-                    onChange={e => setNewAdmin({...newAdmin, storeId: e.target.value})} 
-                    className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none bg-white font-medium text-slate-700 appearance-none"
-                  >
-                    <option value="" disabled>Filial (do'kon) ni tanlang</option>
-                    {stores
-                      .filter(store => newAdmin.role !== 'Manager' || !admins.some(a => a.role === 'Manager' && a.store_id === store.id))
-                      .map(store => (
-                      <option key={store.id} value={store.id}>{store.name}</option>
-                    ))}
-                  </select>
                 </div>
-              </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">To'liq ismi</label>
@@ -435,7 +439,12 @@ const Admins = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vazifasi (Role)</label>
-                <select title="Rolni tanlang" value={newAdmin.role} onChange={e => setNewAdmin({...newAdmin, role: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none bg-white font-medium text-slate-700">
+                <select required title="Rolni tanlang" value={newAdmin.role} onChange={e => {
+                  const val = e.target.value;
+                  if (val === 'Admin' || val === 'Owner') setNewAdmin({...newAdmin, role: val, storeId: ''});
+                  else setNewAdmin({...newAdmin, role: val});
+                }} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none bg-white font-medium text-slate-700">
+                  <option value="" disabled>Vazifani tanlang</option>
                   <option value="Admin">Admin (Administrator)</option>
                   <option value="Manager">Manager (Menejer)</option>
                   <option value="Sotuvchi">Sotuvchi (Sotuvchi)</option>
@@ -466,7 +475,7 @@ const Admins = () => {
                 </div>
               )}
 
-              {editingAdmin.role !== 'Owner' && (
+              {editingAdmin.role !== 'Admin' && editingAdmin.role !== 'Owner' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Biriktirilgan filial</label>
                   <div className="relative">
@@ -517,7 +526,12 @@ const Admins = () => {
                     <Lock size={16} className="opacity-40" />
                   </div>
                 ) : (
-                  <select title="Rolni tanlang" value={editingAdmin.role} onChange={e => setEditingAdmin({...editingAdmin, role: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none bg-white font-medium text-slate-700">
+                  <select required title="Rolni tanlang" value={editingAdmin.role} onChange={e => {
+                    const val = e.target.value;
+                    if (val === 'Admin' || val === 'Owner') setEditingAdmin({...editingAdmin, role: val, storeId: ''});
+                    else setEditingAdmin({...editingAdmin, role: val});
+                  }} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-yellow-400 outline-none bg-white font-medium text-slate-700">
+                    <option value="" disabled>Vazifani tanlang</option>
                     <option value="Admin">Admin (Administrator)</option>
                     <option value="Manager">Manager (Menejer)</option>
                     <option value="Sotuvchi">Sotuvchi (Sotuvchi)</option>

@@ -13,13 +13,20 @@ import Stores from './pages/Stores';
 import AppManagement from './pages/AppManagement';
 import { NotificationProvider } from './context/NotificationContext';
 
-const Finance = () => <div className="p-8"><h1 className="text-2xl font-bold mb-4">Finance Portal</h1><p className="text-gray-600">Owner-only access module for tracking revenue and expenses.</p></div>;
+import Finance from './pages/Finance';
 
-const ProtectedRoute = ({ children, requireOwner = false }: { children: React.ReactNode, requireOwner?: boolean }) => {
+const ProtectedRoute = ({ children, requireOwner = false, allowAdmin = false }: { children: React.ReactNode, requireOwner?: boolean, allowAdmin?: boolean }) => {
   const { user } = useAuth();
   
   if (!user) return <Navigate to="/login" replace />;
-  if (requireOwner && user.role !== 'Owner') return <Navigate to="/" replace />;
+  
+  if (requireOwner) {
+    if (allowAdmin) {
+      if (user.role !== 'Owner' && user.role !== 'Admin') return <Navigate to="/" replace />;
+    } else {
+      if (user.role !== 'Owner') return <Navigate to="/" replace />;
+    }
+  }
   
   return children;
 };
@@ -49,7 +56,7 @@ const router = createBrowserRouter([
       { 
         path: "app-management", 
         element: (
-          <ProtectedRoute requireOwner={true}>
+          <ProtectedRoute requireOwner={true} allowAdmin={true}>
             <AppManagement />
           </ProtectedRoute>
         ) 
@@ -65,7 +72,7 @@ const router = createBrowserRouter([
       { 
         path: "admins", 
         element: (
-          <ProtectedRoute requireOwner={true}>
+          <ProtectedRoute requireOwner={true} allowAdmin={true}>
             <Admins />
           </ProtectedRoute>
         ) 

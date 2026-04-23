@@ -9,14 +9,15 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   AlertTriangle,
-  Users,
   ChevronRight,
   Package,
   Tag,
   TicketPercent,
   MousePointer2,
   TrendingDown,
-  TrendingUp
+  TrendingUp,
+  Timer,
+  Truck
 } from 'lucide-react';
 import {
   AreaChart,
@@ -46,14 +47,19 @@ const Dashboard = () => {
     withDiscount: 0,
     withoutDiscount: 0,
     uniqueProducts: 0,
-    totalInventoryValue: 0
+    totalInventoryValue: 0,
+    unlistedProducts: 0
   });
   const [salesData, setSalesData] = useState<{ name: string; total: number }[]>([]);
-  const [lowStockItems, setLowStockItems] = useState<{ name: string; stock: number; sku: string }[]>([]);
+  const [lowStockItems, setLowStockItems] = useState<{ name: string; stock: number; sku: string; price: number; id: string }[]>([]);
   const [quickStatuses, setQuickStatuses] = useState({
     waiting: 0,
     onTheWay: 0
   });
+  
+  // Custom chart period filters
+  const [chartPeriod, setChartPeriod] = useState<'week' | 'month' | 'custom'>('week');
+  const [customDate, setCustomDate] = useState({ start: '', end: '' });
   const [trends, setTrends] = useState<{
     total: { change: string; trend: 'up' | 'down' };
     delivered: { change: string; trend: 'up' | 'down' };
@@ -90,8 +96,24 @@ const Dashboard = () => {
       
       const filterDateStr = filterDate.toISOString();
 
-      // Fetch orders for the whole relevant period (at least from yesterday)
-      const fetchStart = filterDateStr < startOfYesterdayStr ? filterDateStr : startOfYesterdayStr;
+      // For dynamic chart filtering
+      let chartFetchStart = '';
+      if (chartPeriod === 'week') {
+        const d = new Date(); d.setDate(d.getDate() - 7);
+        chartFetchStart = d.toISOString();
+      } else if (chartPeriod === 'month') {
+        const d = new Date(); d.setDate(d.getDate() - 30);
+        chartFetchStart = d.toISOString();
+      } else if (chartPeriod === 'custom' && customDate.start) {
+        chartFetchStart = new Date(customDate.start).toISOString();
+      } else {
+        const d = new Date(); d.setDate(d.getDate() - 7);
+        chartFetchStart = d.toISOString();
+      }
+
+      // Fetch orders for the whole relevant period (earliest needed date)
+      const fetchStartOptions = [filterDateStr, startOfYesterdayStr, chartFetchStart].sort();
+      const fetchStart = fetchStartOptions[0];
 
       const { data: ordersData, error: ordersError } = await supabase
         .from('orders')
@@ -135,19 +157,56 @@ const Dashboard = () => {
           returned: calculateTrend('Returned')
         });
 
-        // 2. Process Sales Data for Chart (Daily)
-        const last7Days = [...Array(7)].map((_, i) => {
-          const d = new Date();
-          d.setDate(d.getDate() - i);
-          return d.toISOString().split('T')[0];
-        }).reverse();
+        // 2. Process Sales Data for Chart (Dynamic)
+        let datesArray: Date[] = [];
+        
+        if (chartPeriod === 'week') {
+          for (let i = 6; i >= 0; i--) {
+            const d = new Date(); d.setDate(d.getDate() - i);
+            datesArray.push(d);
+          }
+        } else if (chartPeriod === 'month') {
+          for (let i = 29; i >= 0; i--) {
+            const d = new Date(); d.setDate(d.getDate() - i);
+            datesArray.push(d);
+          }
+        } else if (chartPeriod === 'custom') {
+          if (customDate.start && customDate.end) {
+            let curr = new Date(customDate.start);
+            const endD = new Date(customDate.end);
+            endD.setHours(23, 59, 59, 999);
+            while (curr <= endD) {
+              datesArray.push(new Date(curr));
+              curr.setDate(curr.getDate() + 1);
+            }
+          } else {
+             datesArray = [new Date()];
+          }
+        }
 
-        const weekdays = ['Yak', 'Dush', 'Sesh', 'Chor', 'Pay', 'Jum', 'Shan'];
-        const chartMapped = last7Days.map(dateStr => {
-          const count = ordersData.filter(o => o.created_at.startsWith(dateStr)).length;
-          const dateObj = new Date(dateStr);
+        const weekdaysFull = ['Yakshanba', 'Dushanba', 'Seshanba', 'Chorshanba', 'Payshanba', 'Juma', 'Shanba'];
+        const months = ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyun', 'Iyul', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
+        
+        const chartMapped = datesArray.map(dateObj => {
+          const localOffset = dateObj.getTimezoneOffset() * 60000;
+          const localDate = new Date(dateObj.getTime() - localOffset);
+          const dateStr = localDate.toISOString().split('T')[0];
+          
+          const count = ordersData.filter(o => {
+            const oLocalOffset = new Date(o.created_at).getTimezoneOffset() * 60000;
+            const oLocalDate = new Date(new Date(o.created_at).getTime() - oLocalOffset);
+            return oLocalDate.toISOString().split('T')[0] === dateStr;
+          }).length;
+          
+          let name = '';
+          if (chartPeriod === 'week') {
+             name = weekdaysFull[dateObj.getDay()];
+          } else {
+             name = `${dateObj.getDate()}-${months[dateObj.getMonth()]}`;
+          }
+
           return {
-            name: weekdays[dateObj.getDay()],
+            name,
             total: count
           };
         });
@@ -239,8 +298,8 @@ const Dashboard = () => {
 
       // 5. Fetch Global Stats (Warehouse & Listings)
       const [allProducts, activeListings] = await Promise.all([
-        supabase.from('products').select('stock, price'),
-        supabase.from('product_listings').select('discount_percent').eq('status', 'Active')
+        supabase.from('products').select('sku, stock, price'),
+        supabase.from('product_listings').select('sku, discount_percent').eq('status', 'Active')
       ]);
 
       const totalStock = allProducts.data?.reduce((sum, p) => sum + (p.stock || 0), 0) || 0;
@@ -251,6 +310,10 @@ const Dashboard = () => {
       const withDiscount = activeListings.data?.filter(l => l.discount_percent && l.discount_percent !== '0').length || 0;
       const withoutDiscount = totalActive - withDiscount;
 
+      // Calculate unlisted by matching SKUs (as done in Inventory.tsx)
+      const listedSkus = new Set(activeListings.data?.filter(l => l.sku).map(l => l.sku) || []);
+      const unlistedCount = allProducts.data?.filter(p => p.sku && !listedSkus.has(p.sku)).length || 0;
+
       setStats(prev => ({
         ...prev,
         warehouseStock: totalStock,
@@ -258,7 +321,8 @@ const Dashboard = () => {
         withDiscount,
         withoutDiscount,
         uniqueProducts: uniqueTypes,
-        totalInventoryValue: totalValue
+        totalInventoryValue: totalValue,
+        unlistedProducts: unlistedCount
       }));
 
     } catch (err) {
@@ -291,7 +355,7 @@ const Dashboard = () => {
     return () => {
       supabase.removeChannel(ordersChannel);
     };
-  }, []);
+  }, [activeRange, chartPeriod, customDate]);
 
   const performanceStats = [
     { label: 'Jami buyurtmalar', value: `${stats.total} ta`, change: trends.total.change, trend: trends.total.trend, icon: <ShoppingBag className="text-purple-600" /> },
@@ -325,19 +389,6 @@ const Dashboard = () => {
                 Bugungi ko'rsatkichlar tahlili.
               </p>
             </div>
-            <div className="ml-auto relative z-10 hidden md:block">
-               <select 
-                 value={activeRange}
-                 onChange={(e) => setActiveRange(e.target.value)}
-                 className="px-3 py-2 rounded-xl border border-gray-200 outline-none bg-white font-bold text-[11px] text-slate-600 focus:ring-2 focus:ring-sidebarDark/10 transition-all cursor-pointer shadow-sm"
-                 aria-label="Vaqt oralig'ini tanlash"
-                 title="Vaqt oralig'i"
-               >
-                 <option value="7_days">Oxirgi 7 kun</option>
-                 <option value="30_days">Oxirgi 30 kun</option>
-                 <option value="month">Shu oy</option>
-               </select>
-            </div>
           </div>
 
           {/* KPI Cards (Grid 2x2) */}
@@ -365,13 +416,45 @@ const Dashboard = () => {
 
           {/* Main Orders Chart */}
           <div className="bg-white p-5 rounded-[24px] border border-gray-100 shadow-sm relative overflow-hidden">
-            <div className="flex justify-between items-center mb-6">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
               <div>
                 <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">Buyurtmalar Dinamikasi</h3>
               </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full bg-sidebarDark"></div>
-                <span className="text-[9px] font-bold text-slate-600 uppercase">Buyurtmalar</span>
+              <div className="flex items-center gap-3 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+                {chartPeriod === 'custom' && (
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="date" 
+                      value={customDate.start}
+                      onChange={(e) => setCustomDate(prev => ({ ...prev, start: e.target.value }))}
+                      className="px-2 py-1.5 rounded-lg border border-gray-200 outline-none text-[10px] font-bold text-slate-600 focus:ring-1 focus:ring-sidebarDark/10 hover:border-gray-300 transition-all font-mono"
+                      title="Boshlanish sanasi"
+                    />
+                    <span className="text-slate-300">-</span>
+                    <input 
+                      type="date" 
+                      value={customDate.end}
+                      onChange={(e) => setCustomDate(prev => ({ ...prev, end: e.target.value }))}
+                      className="px-2 py-1.5 rounded-lg border border-gray-200 outline-none text-[10px] font-bold text-slate-600 focus:ring-1 focus:ring-sidebarDark/10 hover:border-gray-300 transition-all font-mono"
+                      title="Tugash sanasi"
+                    />
+                  </div>
+                )}
+                <select 
+                  value={chartPeriod}
+                  onChange={(e) => setChartPeriod(e.target.value as 'week' | 'month' | 'custom')}
+                  className="px-2 py-1.5 rounded-lg border border-gray-200 outline-none focus:outline-none bg-white font-bold text-[10px] text-slate-600 focus:ring-1 focus:ring-sidebarDark/10 transition-all cursor-pointer outline-none shadow-sm capitalize tracking-wide"
+                  aria-label="Grafik davrini tanlash"
+                  title="Grafik davri"
+                >
+                  <option value="week">Haftalik</option>
+                  <option value="month">Oylik</option>
+                  <option value="custom">Qo'lda kiritish</option>
+                </select>
+                <div className="hidden md:flex items-center gap-1.5 ml-1">
+                  <div className="w-2 h-2 rounded-full bg-sidebarDark"></div>
+                  <span className="text-[9px] font-bold text-slate-600 uppercase">Buyurtmalar</span>
+                </div>
               </div>
             </div>
             
@@ -451,6 +534,24 @@ const Dashboard = () => {
 
         {/* Right Column (Analytics & Statistics) */}
         <div className="space-y-6">
+          {/* Quick Statuses */}
+          <div className="grid grid-cols-2 gap-4">
+            {[
+              { name: 'Kuryerni kutmoqda', value: quickStatuses.waiting, color: 'bg-purple-50 text-purple-600 border-purple-100', icon: <Timer size={16} /> },
+              { name: 'Yo\'lda', value: quickStatuses.onTheWay, color: 'bg-blue-50 text-blue-500 border-blue-100', icon: <Truck size={16} /> },
+            ].map((item, i) => (
+              <div key={i} className="bg-white p-4 rounded-[24px] border border-gray-100 shadow-sm transition-all hover:shadow-md flex items-center gap-3 xl:gap-4 group">
+                 <div className={`w-10 h-10 shrink-0 rounded-xl border ${item.color} flex items-center justify-center group-hover:scale-110 transition-all`}>
+                    {item.icon}
+                 </div>
+                 <div className="min-w-0">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest truncate">{item.name}</p>
+                    <p className="text-lg font-black text-slate-900">{item.value} <span className="text-[9px] font-bold text-slate-400 uppercase">ta</span></p>
+                 </div>
+              </div>
+            ))}
+          </div>
+
           {/* Best & Least Sellers (Side by Side Row) */}
           <div className="grid grid-cols-2 gap-4">
             {/* Top Sellers Widget */}
@@ -561,23 +662,29 @@ const Dashboard = () => {
 
           {/* Quick Links Section */}
           <div className="grid grid-cols-2 gap-4">
-               <Link to="/orders" className="bg-white p-5 rounded-[24px] border border-gray-100 shadow-sm transition-all group hover:border-sidebarDark/10 hover:shadow-md block relative overflow-hidden">
-                  <div className="flex items-center gap-4">
-                     <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-sidebarDark group-hover:bg-sidebarDark group-hover:text-white transition-all shadow-sm">
-                        <Tag size={20} />
-                     </div>
-                     <div>
-                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Sotuvda</p>
-                        <h4 className="text-lg font-black text-slate-900 tracking-tight">{stats.activeListings} <span className="text-[9px] text-slate-400">tur</span></h4>
-                     </div>
+               <Link to="/orders" className="bg-white p-5 rounded-[24px] border border-gray-100 shadow-sm transition-all group hover:border-sidebarDark/10 hover:shadow-md block relative overflow-hidden flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center gap-4 mb-4">
+                       <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-sidebarDark group-hover:bg-sidebarDark group-hover:text-white transition-all shadow-sm">
+                          <Tag size={20} />
+                       </div>
+                       <div>
+                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Sotuvda</p>
+                          <h4 className="text-lg font-black text-slate-900 tracking-tight">{stats.activeListings} <span className="text-[9px] text-slate-400">tur</span></h4>
+                       </div>
+                    </div>
+                    <div className="absolute top-5 right-5 opacity-0 group-hover:opacity-100 transition-opacity">
+                       <ChevronRight size={14} className="text-sidebarDark" />
+                    </div>
                   </div>
-                  <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                     <ChevronRight size={14} className="text-sidebarDark" />
+                  <div className="pt-3 border-t border-gray-50 mt-auto">
+                     <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Chegirmali tovarlar</p>
+                     <p className="text-xs font-black text-sidebarDark">{stats.withDiscount} <span className="text-[8px] text-slate-500 uppercase">ta tovar</span></p>
                   </div>
                </Link>
 
                <Link to="/inventory" className="bg-white p-5 rounded-[24px] border border-gray-100 shadow-sm transition-all group hover:border-sidebarDark/10 hover:shadow-md block relative overflow-hidden">
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4 mb-4">
                      <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-sidebarDark group-hover:bg-sidebarDark group-hover:text-white transition-all shadow-sm">
                         <Package size={20} />
                      </div>
@@ -586,11 +693,31 @@ const Dashboard = () => {
                         <h4 className="text-lg font-black text-slate-900 tracking-tight">{stats.uniqueProducts} <span className="text-[9px] text-slate-400">hil</span></h4>
                      </div>
                   </div>
-                  <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="pt-3 border-t border-gray-50">
+                     <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Umumiy tovar summasi</p>
+                     <p className="text-sm font-black text-sidebarDark">{stats.totalInventoryValue.toLocaleString('uz-UZ')} <span className="text-[8px] text-slate-500 uppercase">UZS</span></p>
+                  </div>
+                  <div className="absolute top-5 right-5 opacity-0 group-hover:opacity-100 transition-opacity">
                      <ChevronRight size={14} className="text-sidebarDark" />
                   </div>
                </Link>
           </div>
+
+          {/* Unlisted Products Banner */}
+          <Link to="/inventory" className="block bg-white p-5 rounded-[24px] border border-orange-100 shadow-sm transition-all group hover:border-orange-200 hover:shadow-md relative overflow-hidden">
+               <div className="flex items-center gap-4 relative z-10">
+                  <div className="w-10 h-10 shrink-0 rounded-xl bg-orange-50/50 flex items-center justify-center text-orange-500 border border-orange-100 group-hover:bg-orange-500 group-hover:text-white transition-all shadow-sm">
+                     <AlertTriangle size={18} />
+                  </div>
+                  <div>
+                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider leading-none mb-1">E'lon qilinmagan tovarlar</p>
+                     <h4 className="text-xl font-black text-slate-900 tracking-tight">{stats.unlistedProducts} <span className="text-[9px] font-bold text-slate-400 uppercase ml-0.5">ta omborda</span></h4>
+                  </div>
+               </div>
+               <div className="absolute top-1/2 right-4 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0">
+                  <ChevronRight size={16} className="text-orange-500" />
+               </div>
+          </Link>
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, Bell, Loader2, Store, History, Clock, ChevronDown, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -11,6 +12,7 @@ interface StoreItem {
 
 const Navbar = () => {
   const { user, activeStore, setActiveStore } = useAuth();
+  const navigate = useNavigate();
   const { notifications, unreadCount, markAsRead, markAllAsRead, setIsHistoryOpen } = useNotifications();
   const [isFetching, setIsFetching] = useState(false);
   const [stores, setStores] = useState<StoreItem[]>([]);
@@ -70,15 +72,6 @@ const Navbar = () => {
   return (
     <header className="h-20 shrink-0 bg-white border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-50 transition-all">
       <div className="flex items-center gap-6">
-        <div className="flex items-center bg-bgSubtle rounded-xl px-4 py-2 w-96 focus-within:ring-2 ring-mustard/50 transition-all border border-transparent focus-within:border-mustard/30">
-          <Search size={20} className="text-gray-400" />
-          <input 
-            type="text" 
-            placeholder="Search products, orders, employees..." 
-            className="bg-transparent border-none outline-none w-full ml-3 text-sm text-textMain placeholder-gray-400"
-          />
-        </div>
-
         {/* Custom Store Selector - Professional Design */}
         {(user?.role === 'Owner' || user?.role === 'Admin') ? (
           <div className="relative">
@@ -198,6 +191,10 @@ const Navbar = () => {
                           key={notif.id} 
                           onClick={() => {
                             markAsRead(notif.id);
+                            if (notif.id === 'local-salary-notif') {
+                              setIsNotifOpen(false);
+                              navigate('/finance');
+                            }
                           }}
                           className={`p-4 hover:bg-slate-50 cursor-pointer transition-colors relative group ${!notif.is_read ? 'bg-mustard/5' : ''}`}
                         >
@@ -212,7 +209,9 @@ const Navbar = () => {
                               <p className="text-xs font-black text-slate-800 leading-tight">
                                 {notif.order_number}
                               </p>
-                              <p className="text-[11px] font-bold text-slate-400 mb-1">yangi buyurtma</p>
+                              <p className="text-[11px] font-bold text-slate-400 mb-1">
+                                {notif.id === 'local-salary-notif' ? notif.customer_name : 'yangi buyurtma'}
+                              </p>
                               <div className="flex items-center justify-between">
                                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{formatDate(notif.created_at)}</span>
                               </div>
